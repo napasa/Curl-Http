@@ -61,6 +61,8 @@ namespace Network
 		
 		static void run2(const URL &url, std::shared_ptr<AbstractAction> action, Id id);
 
+		static void PostRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename);
+
 		static Http* instance;
 	};
 

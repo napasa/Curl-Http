@@ -17,6 +17,9 @@ namespace Network
 		public:
 			AttribMap(std::initializer_list<value_type> init)
 				:_AttribMap(init){}
+			AttribValue& operator[](const AttribKey& key){
+				return _AttribMap::operator[](key);
+			}
 			AttribMap(){}
 			const std::string ToString()const{
 				std::string _attribs;
@@ -37,6 +40,9 @@ namespace Network
 		URL(const char *url);
 		URL(const std::string &url);
 		const std::string & getUrl()const;
+		const AttribMap &GetAttribMap()const{
+			return _queryString;
+		}
 		virtual ~URL();
 	private:
 		void formatUrl();
