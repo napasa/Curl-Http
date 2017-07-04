@@ -41,7 +41,8 @@ namespace Network
 			_url += (attribPair.first + "=" + attribPair.second);
 			_url.append("&");
 		}
-		_url[_url.size() - 1] = '\0';
+		//_url[_url.size() - 1] = '\0';
+		_url.pop_back();
 	}
 
 	URL::~URL()
