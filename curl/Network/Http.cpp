@@ -31,102 +31,7 @@ namespace Network
 		return realsize;
 	}
 
-	void Http::run(const URL &url, Http::FinishedCallback cbk, Identifier identifier)
-	{
-		CURL *handle = curl_easy_init();
-		if (handle)
-		{
-
-			MemoryStruct *chunk = new MemoryStruct;
-			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
-			chunk->size = 0;    /* no data at this point */
-
-
-			CURLcode res;
-
-			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
-			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
-			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-			curl_easy_setopt(handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-			curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
-			curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
-			res = curl_easy_perform(handle);
-
-			/* check for errors */
-			if (CURLE_OK != res)
-			{
-				chunk->status = false;
-				std::string errCode = std::to_string(res);
-				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
-				memcpy(&(chunk->memory[chunk->size]), errCode.c_str(), errCode.size());
-				chunk->size += errCode.size();
-				chunk->memory[chunk->size] = 0;
-			}
-			else
-			{
-				chunk->status = true;
-			}
-			chunk->url = url;
-			if (cbk != NULL)
-			{
-				cbk(chunk);
-			}
-
-			free(chunk->memory);
-			delete chunk;
-			curl_easy_cleanup(handle);
-		}
-	}
-	std::mutex g_mutex;
-	void Http::run1(const URL &url, HWND hwnd, Identifier identifier)
-	{
-		g_mutex.lock();
-
-		CURL *handle = curl_easy_init();
-		if (handle)
-		{
-
-			MemoryStruct *chunk = new MemoryStruct;
-			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
-			chunk->size = 0;    /* no data at this point */
-
-
-			CURLcode res;
-			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
-			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
-			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-			curl_easy_setopt(handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-			curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
-			curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
-			res = curl_easy_perform(handle);
-
-			/* check for errors */
-			if (CURLE_OK != res)
-			{
-				chunk->status = false;
-				std::string errCode = std::to_string(res);
-				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
-				memcpy(&(chunk->memory[chunk->size]), errCode.c_str(), errCode.size());
-				chunk->size += errCode.size();
-				chunk->memory[chunk->size] = 0;
-			}
-			else
-			{
-				chunk->status = true;
-			}
-			chunk->url = url;
-			if (hwnd != 0)
-			{
-				SendMessage(hwnd, identifier, (WPARAM)chunk, 0);
-			}
-			free(chunk->memory);
-			delete chunk;
-			curl_easy_cleanup(handle);
-		}
-		g_mutex.unlock();
-	}
-
-	void Http::run2(const URL &url, std::shared_ptr<AbstractAction> action, Id id)
+	void Http::GetRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id)
 	{
 		CURL *handle = curl_easy_init();
 		if (handle)
@@ -271,41 +176,18 @@ namespace Network
 		}
 	}
 
-	void Http::get(URL url, FinishedCallback cbk, Identifier identifier)
-	{
-		std::thread http(Http::run, url, cbk, identifier);
-		http.detach();
-	}
 
-	void Http::get(const char *url, FinishedCallback cbk, Identifier identifier)
+	void Http::Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async/*=true*/)
 	{
-		std::thread http(Http::run, URL(url), cbk, identifier);
-		http.detach();
-	}
-
-	void Http::get(const char *url, HWND hwnd /*= 0*/, Identifier identifier /*= 0*/)
-	{
-		std::thread http(Http::run1, URL(url), hwnd, identifier);
-		http.detach();
-	}
-
-	void Http::get(URL url, HWND hwnd /*= 0*/, Identifier identifier /*= 0*/)
-	{
-		std::thread http(Http::run1, url, hwnd, identifier);
-		http.detach();
-	}
-
-	void Http::get(const std::string &url, HWND hwnd /*= 0*/, Identifier identifier /*= 0*/)
-	{
-		std::thread http(Http::run1, URL(url), hwnd, identifier);
-		http.detach();
-	}
-
-	void Http::Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id)
-	{
-
-		std::thread http(Http::run2, URL(url), action, id);
-		http.detach();
+		if (async == true)
+		{
+			std::thread http(Http::GetRun, URL(url), action, id);
+			http.detach();
+		}
+		else
+		{
+			GetRun(url, action, id);
+		}
 	}
 
 
@@ -335,10 +217,17 @@ namespace Network
 	}
 
 
-	void Http::Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename)
+	void Http::Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async/*=true*/)
 	{
-		std::thread http(Http::PostRun, url, action, id, postedFilename);
-		http.detach();
+		if (async == true)
+		{
+			std::thread http(Http::PostRun, url, action, id, postedFilename);
+			http.detach();
+		}
+		else
+		{
+			PostRun(url, action, id, postedFilename);
+		}
 	}
 	Http::~Http()
 	{

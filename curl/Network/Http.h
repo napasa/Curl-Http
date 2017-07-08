@@ -23,7 +23,7 @@ namespace Network
 	public:
 		AbstractAction(){};
 		virtual void Do(const MemoryStruct *memory) = 0;
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) = 0;
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
 		virtual ~AbstractAction(){}
 	};
 
@@ -35,13 +35,8 @@ namespace Network
 		typedef void(*FinishedCallback)(MemoryStruct *memory);
 
 	public:
-		void get(URL url, FinishedCallback cbk, Identifier identifier=0);
-		void get(const char *url, FinishedCallback cbk, Identifier identifier=0);
-		void get(const std::string &url, HWND hwnd = 0, Identifier identifier = 0);
-		void get(const char *url, HWND hwnd = 0, Identifier identifier = 0);
-		void get(URL url, HWND hwnd = 0, Identifier identifier = 0);
-		void Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id);
-		void Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename);
+		void Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async=true);
+		void Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async=true);
 		~Http();
 		
 		Http(const Http &http)=delete;
@@ -54,12 +49,8 @@ namespace Network
 		static int xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
 
 		static 	int older_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow);
-
-		static void run(const URL &url, Http::FinishedCallback cbk, Identifier identifier);
-
-		static void run1(const URL &url, HWND hwnd, Identifier identifier);
 		
-		static void run2(const URL &url, std::shared_ptr<AbstractAction> action, Id id);
+		static void GetRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id);
 
 		static void PostRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename);
 
