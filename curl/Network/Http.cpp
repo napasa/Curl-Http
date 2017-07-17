@@ -9,7 +9,7 @@
 namespace Network
 {
 	Http* Http::instance = NULL;
-	Http* Http::getInstance(){
+	Http* Http::GetInstance(){
 		if (instance == NULL)
 		{
 			Http::instance = new Http();
@@ -231,7 +231,7 @@ namespace Network
 	}
 	Http::~Http()
 	{
-		curl_global_cleanup();
+		;
 	}
 
 }

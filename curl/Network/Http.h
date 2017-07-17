@@ -30,7 +30,7 @@ namespace Network
 	class Http
 	{
 	public:
-		static Http* getInstance();
+		static Http* GetInstance();
 
 		typedef void(*FinishedCallback)(MemoryStruct *memory);
 
