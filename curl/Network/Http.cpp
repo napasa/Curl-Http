@@ -72,10 +72,6 @@ namespace Network
 			delete chunk;
 			curl_easy_cleanup(handle);
 		}
-		else
-		{
-			"xxx";
-		}
 	}
 
 	struct myprogress {
@@ -92,10 +88,9 @@ namespace Network
 
 		struct curl_httppost *formpost = NULL;
 		struct curl_httppost *lastptr = NULL;
+
 		struct curl_slist *headerlist = NULL;
 		static const char buf[] = "Expect:";
-
-		curl_global_init(CURL_GLOBAL_ALL);
 
 		/* Fill in the file upload field */
 		curl_formadd(&formpost,
@@ -140,9 +135,7 @@ namespace Network
 
 			/* what URL that receives this POST */
 			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
-			//if ((argc == 2) && (!strcmp(argv[1], "noexpectheader")))
-			/* only disable 100-continue header if explicitly requested */
-			//	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerlist);
+			curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headerlist);
 			curl_easy_setopt(handle, CURLOPT_HTTPPOST, formpost);
 			//curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
 			/* Perform the request, res will get the return code */
