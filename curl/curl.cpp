@@ -34,7 +34,7 @@ public:
 int main(int argc, char *argv[])
 {
 	Network::URL url("http://cnv2.pdftodoc.cn/doc/word2pdf ");
-	Network::Http::GetInstance()->Post(url, std::make_shared<TestAction>(), 10, "C:\\Users\\no6fo\\Desktop\\32571_20150608.doc");
+	Network::Http::GetInstance()->Post(url, std::make_shared<TestAction>(), 10, "C:\\Users\\no6fo\\Desktop\\a.docx");
 	system("pause");
 	return 0;
 }

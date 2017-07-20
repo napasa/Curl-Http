@@ -6,6 +6,101 @@
 #include <chrono>
 #include "Http.h"
 
+
+struct data {
+	char trace_ascii; /* 1 or 0 */
+	FILE *stream;
+};
+
+static
+void dump(const char *text,
+	FILE *stream, unsigned char *ptr, size_t size,
+	char nohex)
+{
+	size_t i;
+	size_t c;
+
+	unsigned int width = 0x10;
+
+	if (nohex)
+		/* without the hex output, we can fit more on screen */
+		width = 0x40;
+
+	fprintf(stream, "%s, %10.10ld bytes (0x%8.8lx)\n",
+		text, (long)size, (long)size);
+
+	for (i = 0; i < size; i += width) {
+
+		fprintf(stream, "%4.4lx: ", (long)i);
+
+		if (!nohex) {
+			/* hex not disabled, show it */
+			for (c = 0; c < width; c++)
+				if (i + c < size)
+					fprintf(stream, "%02x ", ptr[i + c]);
+				else
+					fputs("   ", stream);
+		}
+
+		for (c = 0; (c < width) && (i + c < size); c++) {
+			/* check for 0D0A; if found, skip past and start a new line of output */
+			if (nohex && (i + c + 1 < size) && ptr[i + c] == 0x0D && ptr[i + c + 1] == 0x0A) {
+				i += (c + 2 - width);
+				break;
+			}
+			fprintf(stream, "%c",
+				(ptr[i + c] >= 0x20) && (ptr[i + c] < 0x80) ? ptr[i + c] : '.');
+			/* check again for 0D0A, to avoid an extra \n if it's at width */
+			if (nohex && (i + c + 2 < size) && ptr[i + c + 1] == 0x0D && ptr[i + c + 2] == 0x0A) {
+				i += (c + 3 - width);
+				break;
+			}
+		}
+		fputc('\n', stream); /* newline */
+	}
+	fflush(stream);
+}
+
+static
+int my_trace(CURL *handle, curl_infotype type,
+	char *data, size_t size,
+	void *userp)
+{
+	struct data *config = (struct data *)userp;
+	const char *text;
+	(void)handle; /* prevent compiler warning */
+
+	switch (type) {
+	case CURLINFO_TEXT:
+		fprintf(config->stream, "== Info: %s", data);
+		/* FALLTHROUGH */
+	default: /* in case a new one is introduced to shock us */
+		return 0;
+
+	case CURLINFO_HEADER_OUT:
+		text = "=> Send header";
+		break;
+	case CURLINFO_DATA_OUT:
+		text = "=> Send data";
+		break;
+	case CURLINFO_SSL_DATA_OUT:
+		text = "=> Send SSL data";
+		break;
+	case CURLINFO_HEADER_IN:
+		text = "<= Recv header";
+		break;
+	case CURLINFO_DATA_IN:
+		text = "<= Recv data";
+		break;
+	case CURLINFO_SSL_DATA_IN:
+		text = "<= Recv SSL data";
+		break;
+	}
+
+	dump(text, config->stream, (unsigned char *)data, size, config->trace_ascii);
+	return 0;
+}
+
 namespace Network
 {
 	Http* Http::instance = NULL;
@@ -118,10 +213,20 @@ namespace Network
 			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
 			chunk->size = 0;    /* no data at this point */
 
+#ifdef _DEBUG
+			struct data config;
+			config.trace_ascii = 1;
+			config.stream = fopen("dump", "a+");
+			curl_easy_setopt(handle, CURLOPT_DEBUGFUNCTION, my_trace);
+			curl_easy_setopt(handle, CURLOPT_DEBUGDATA, &config);
+#endif
+
+
+
 			curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0);
 			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
 			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
+			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
 			curl_easy_setopt(handle, CURLOPT_PROGRESSFUNCTION, older_progress);
 			/* pass the struct pointer into the progress function */
 			curl_easy_setopt(handle, CURLOPT_PROGRESSDATA, &prog);
@@ -132,17 +237,22 @@ namespace Network
 			an alias to CURLOPT_PROGRESSDATA */
 			curl_easy_setopt(handle, CURLOPT_XFERINFODATA, &prog);
 #endif
-
 			/* what URL that receives this POST */
 			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
 			curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headerlist);
 			curl_easy_setopt(handle, CURLOPT_HTTPPOST, formpost);
-			//curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
+			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
 			/* Perform the request, res will get the return code */
 			res = curl_easy_perform(handle);
+#ifdef _DEBUG
+			fclose(config.stream);
+#endif // DEBUG
+
+
 			/* Check for errors */
 			if (res != CURLE_OK)
 			{
+
 				chunk->status = false;
 				std::string errCode = std::to_string(res);
 				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
@@ -161,7 +271,6 @@ namespace Network
 
 			/* always cleanup */
 			curl_easy_cleanup(handle);
-
 			/* then cleanup the formpost chain */
 			curl_formfree(formpost);
 			/* free slist */
