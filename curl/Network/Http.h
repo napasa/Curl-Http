@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include <memory>
+#include <queue>
+#include <atomic>
 #include "URL.h"
 #include "..\..\include\curl\curl.h"
 
@@ -38,7 +40,7 @@ namespace Network
 		void Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async=true);
 		void Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async=true);
 		~Http();
-		
+		void Get(const std::string &url);
 		Http(const Http &http)=delete;
 		Http& operator=(const Http&)=delete;
 	private:

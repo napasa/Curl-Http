@@ -336,4 +336,145 @@ namespace Network
 		;
 	}
 
+	std::queue<std::string> m_queueRequest;
+	std::atomic_bool m_living{false};
+
+	static size_t cb(char *d, size_t n, size_t l, void *p)
+	{
+		/* take care of the data here, ignored in this example */
+		(void)d;
+		(void)p;
+		return n*l;
+	}
+
+	static void init(CURLM *cm)
+	{
+		CURL *eh = curl_easy_init();
+
+		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, cb);
+		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
+		curl_easy_setopt(eh, CURLOPT_URL, m_queueRequest.front());
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, m_queueRequest.front());
+		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
+		m_queueRequest.pop();
+		curl_multi_add_handle(cm, eh);
+	}
+
+	void RequestRun()
+	{
+		m_living.store(true);
+
+		CURLM *cm;
+		CURLMsg *msg;
+		long L;
+		unsigned int C = 0;
+		int M, Q, U = -1;
+		fd_set R, W, E;
+		struct timeval T;
+
+		cm = curl_multi_init();
+		int MAX_SIZE = 3;
+		/* we can optionally limit the total amount of connections this multi handle
+		uses */
+		curl_multi_setopt(cm, CURLMOPT_MAXCONNECTS, MAX_SIZE);
+
+
+		while (true)
+		{
+			//当队列为空时，则等待元素
+			while (m_queueRequest.empty() == true)
+			{
+				;
+			}
+			//初始化请求体
+			int l_initNum = 0;
+			while (m_queueRequest.size() != 0 && l_initNum++ < MAX_SIZE)
+			{
+				init(cm);
+			}
+			l_initNum = 0;
+			while (U) {
+				//读写CURLM中可用CURL数据。U值代表当前是否还有传输正在进行中。When running_handles is set to zero (0) on the return of this function, there is no longer any transfers in progress
+				//因此此处用U来循环执行
+				curl_multi_perform(cm, &U);
+				//当U==0时意味着数据全都读写完毕
+				if (U) {
+					FD_ZERO(&R);
+					FD_ZERO(&W);
+					FD_ZERO(&E);
+					//将cm中的fd分别读到三个fd_set当中，M值代表当前读取了多少个可用fd,疑问是M是什么意思
+					if (curl_multi_fdset(cm, &R, &W, &E, &M)) {
+						fprintf(stderr, "E: curl_multi_fdset\n");
+						//return EXIT_FAILURE;
+						return;
+					}
+					//An application using the libcurl multi interface should call curl_multi_timeout to figure out how long it should wait for socket actions - at most - before proceeding
+					//获取自身该适当等待多久再次进行perform操作
+					if (curl_multi_timeout(cm, &L)) {
+						fprintf(stderr, "E: curl_multi_timeout\n");
+						//return EXIT_FAILURE;
+						return;
+					}
+					//应该再过多长时间再次perform或select
+					if (L == -1)
+						L = 100;
+
+					if (M == -1) {
+#ifdef WIN32
+						Sleep(L);
+#else
+						sleep((unsigned int)L / 1000);
+#endif
+					}
+					else {
+						T.tv_sec = L / 1000;
+						T.tv_usec = (L % 1000) * 1000;
+						//The select() system call examines the I/O descriptor sets whose addresses are passed	in readfds, writefds, and exceptfds to see if some of their
+						//	descriptors are ready for reading, are ready for writing, or have an exceptional condition pending, respectively
+						if (0 > select(M + 1, &R, &W, &E, &T)) {
+							fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
+								M + 1, L, errno, strerror(errno));
+							//return EXIT_FAILURE;
+							return;
+						}
+					}
+				}
+
+				while ((msg = curl_multi_info_read(cm, &Q))) {
+					if (msg->msg == CURLMSG_DONE) {
+						char *url;
+						CURL *e = msg->easy_handle;
+						curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &url);
+						fprintf(stderr, "R: %d - %s <%s>\n",
+							msg->data.result, curl_easy_strerror(msg->data.result), url);
+						curl_multi_remove_handle(cm, e);
+						curl_easy_cleanup(e);
+					}
+					else {
+						fprintf(stderr, "E: CURLMsg (%d)\n", msg->msg);
+					}
+					if (C < MAX_SIZE) {
+						init(cm);
+						U++; /* just to prevent it from remaining at 0 if there are more
+							 URLs to get */
+					}
+				}
+
+			}
+		}
+
+		m_living.store(false);
+	}
+
+
+	void Http::Get(const std::string &url)
+	{
+		m_queueRequest.push(url);
+		if (!m_living.load())
+		{
+			std::thread networker(RequestRun);
+			networker.detach();
+		}
+	}
+
 }
