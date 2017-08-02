@@ -337,13 +337,40 @@ namespace Network
 	}
 
 	std::queue<std::string> g_queueRequest({
-		"http://www.microsoft.com",
-		"http://www.opensource.org",
-		"http://www.yahoo.com",
-		"http://www.google.com",
-		"http://www.twitter.com"
+		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
+		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
+		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
+		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
+		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1"
 	});
 	std::atomic_bool m_living{false};
+
+	struct PrivateData{
+		MemoryStruct m_memory;
+		std::string m_url;
+	};
+
+	static size_t
+		WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
+	{
+		size_t realsize = size * nmemb;
+		PrivateData *data = (struct PrivateData *)userp;
+
+		data->m_memory.memory = (char *)realloc(data->m_memory.memory, data->m_memory.size + realsize + 1);
+		if (data->m_memory.memory == NULL) {
+			/* out of memory! */
+			printf("not enough memory (realloc returned NULL)\n");
+			return 0;
+		}
+
+		memcpy(&(data->m_memory.memory[data->m_memory.size]), contents, realsize);
+		data->m_memory.size += realsize;
+		data->m_memory.memory[data->m_memory.size] = 0;
+
+		return realsize;
+	}
+
+
 
 	static size_t cb(char *d, size_t n, size_t l, void *p)
 	{
@@ -361,18 +388,24 @@ namespace Network
 	static void init(CURLM *cm)
 	{
 		CURL *eh = curl_easy_init();
-		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, cb);
-		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
 
-		curl_easy_setopt(eh, CURLOPT_URL, g_queueRequest.front().c_str());
-		auto request = malloc(g_queueRequest.front().size() + 1);
-		memcpy(request, g_queueRequest.front().c_str(), g_queueRequest.front().size() + 1);
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, request);
+		//设置数据
+		PrivateData *l_privateData = new PrivateData;
+		l_privateData->m_url = g_queueRequest.front();
+		l_privateData->m_memory.memory = (char *)malloc(1);
+		l_privateData->m_memory.size = 0;
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, l_privateData);
+		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)l_privateData);
 
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
 #ifdef _DEBUG
 		_input_requests.push_back(g_queueRequest.front());
 #endif // _DEBUG
+
+		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
+		curl_easy_setopt(eh, CURLOPT_URL, g_queueRequest.front().c_str());
+
 
 		g_queueRequest.pop();
 		curl_multi_add_handle(cm, eh);
@@ -474,17 +507,33 @@ namespace Network
 				while ((msg = curl_multi_info_read(cm, &Q))) {
 					char l_result[MAX_PATH];
 					if (msg->msg == CURLMSG_DONE) {
-						char *url;
+						PrivateData *l_privateData;
 						CURL *e = msg->easy_handle;
-						curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &url);
-
+						curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &l_privateData);
+						_excuted_requests.push_back(l_privateData->m_url);
+						if (msg->data.result == CURLE_OK)
+						{
 #ifdef _DEBUG
-						_excuted_requests.push_back(url);
+							static int i;
+							std::string htmlname = std::to_string(i++) + ".html";
+							FILE * pFile = fopen(htmlname.c_str(), "wb");
+							fwrite(l_privateData->m_memory.memory, sizeof(char), l_privateData->m_memory.size, pFile);
+							fclose(pFile);
 #endif // _DEBUG
-						sprintf(l_result, "R: %d - %s <%s>\n",
-							msg->data.result, curl_easy_strerror(msg->data.result), url);
-						SL_LOG(l_result);
-						delete url;
+							//通知外界结果
+						}
+						else
+						{
+#ifdef _DEBUG
+							sprintf(l_result, "R: %d - %s <%s>\n",
+								msg->data.result, curl_easy_strerror(msg->data.result), l_privateData->m_url.c_str());
+							SL_LOG(l_result);
+#endif // _DEBUG
+							//通知外界结果
+						}
+						
+						delete l_privateData->m_memory.memory;
+						delete l_privateData;
 						curl_multi_remove_handle(cm, e);
 						curl_easy_cleanup(e);
 					}
@@ -500,7 +549,6 @@ namespace Network
 
 			}
 		}
-
 		m_living.store(false);
 	}
 

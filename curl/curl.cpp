@@ -20,7 +20,8 @@ int main(int argc, char *argv[])
 	while (std::cin>> request)
 	{
 		std::cout << "Receive Request: ";
-		Network::g_queueRequest.push(request);
+		//Network::g_queueRequest.push(request);
+		Network::Http::GetInstance()->Get(request);
 		std::cout << request << std::endl;
 		std::cout << "Input Request:  ";
 	}
