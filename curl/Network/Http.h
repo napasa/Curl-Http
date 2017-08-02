@@ -7,6 +7,9 @@
 
 namespace Network
 {
+
+	extern std::queue<std::string> g_queueRequest;
+
 	typedef int Id;
 	typedef struct tagMemoryStruct
 	{

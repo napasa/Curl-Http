@@ -5,7 +5,7 @@
 #include <mutex>
 #include <chrono>
 #include "Http.h"
-
+#include "..\SimpleLog.h"
 
 struct data {
 	char trace_ascii; /* 1 or 0 */
@@ -336,7 +336,13 @@ namespace Network
 		;
 	}
 
-	std::queue<std::string> m_queueRequest;
+	std::queue<std::string> g_queueRequest({
+		"http://www.microsoft.com",
+		"http://www.opensource.org",
+		"http://www.yahoo.com",
+		"http://www.google.com",
+		"http://www.twitter.com"
+	});
 	std::atomic_bool m_living{false};
 
 	static size_t cb(char *d, size_t n, size_t l, void *p)
@@ -347,16 +353,28 @@ namespace Network
 		return n*l;
 	}
 
+#ifdef _DEBUG
+	/*测试是否所有request请求都会被执行*/
+	std::vector<std::string> _input_requests;
+	std::vector<std::string> _excuted_requests;
+#endif
 	static void init(CURLM *cm)
 	{
 		CURL *eh = curl_easy_init();
-
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, cb);
 		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-		curl_easy_setopt(eh, CURLOPT_URL, m_queueRequest.front());
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, m_queueRequest.front());
+
+		curl_easy_setopt(eh, CURLOPT_URL, g_queueRequest.front().c_str());
+		auto request = malloc(g_queueRequest.front().size() + 1);
+		memcpy(request, g_queueRequest.front().c_str(), g_queueRequest.front().size() + 1);
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, request);
+
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
-		m_queueRequest.pop();
+#ifdef _DEBUG
+		_input_requests.push_back(g_queueRequest.front());
+#endif // _DEBUG
+
+		g_queueRequest.pop();
 		curl_multi_add_handle(cm, eh);
 	}
 
@@ -373,7 +391,7 @@ namespace Network
 		struct timeval T;
 
 		cm = curl_multi_init();
-		int MAX_SIZE = 3;
+		int MAX_SIZE = 6;
 		/* we can optionally limit the total amount of connections this multi handle
 		uses */
 		curl_multi_setopt(cm, CURLMOPT_MAXCONNECTS, MAX_SIZE);
@@ -382,13 +400,26 @@ namespace Network
 		while (true)
 		{
 			//当队列为空时，则等待元素
-			while (m_queueRequest.empty() == true)
+			while (g_queueRequest.empty() == true)
 			{
-				;
+#ifdef _DEBUG
+				std::sort(_input_requests.begin(), _input_requests.end());
+				std::sort(_excuted_requests.begin(), _excuted_requests.end());
+				assert(_input_requests == _excuted_requests);
+#endif // _DEBUG
 			}
+			//初始化debug
+#ifdef _DEBUG
+			_input_requests.clear();
+			_excuted_requests.clear();
+#endif // _DEBUG
+
+			M = Q = U = -1;
+			C = 0;
+
 			//初始化请求体
 			int l_initNum = 0;
-			while (m_queueRequest.size() != 0 && l_initNum++ < MAX_SIZE)
+			while (g_queueRequest.size() != 0 && l_initNum++ < MAX_SIZE)
 			{
 				init(cm);
 			}
@@ -441,19 +472,26 @@ namespace Network
 				}
 
 				while ((msg = curl_multi_info_read(cm, &Q))) {
+					char l_result[MAX_PATH];
 					if (msg->msg == CURLMSG_DONE) {
 						char *url;
 						CURL *e = msg->easy_handle;
 						curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &url);
-						fprintf(stderr, "R: %d - %s <%s>\n",
+
+#ifdef _DEBUG
+						_excuted_requests.push_back(url);
+#endif // _DEBUG
+						sprintf(l_result, "R: %d - %s <%s>\n",
 							msg->data.result, curl_easy_strerror(msg->data.result), url);
+						SL_LOG(l_result);
+						delete url;
 						curl_multi_remove_handle(cm, e);
 						curl_easy_cleanup(e);
 					}
 					else {
-						fprintf(stderr, "E: CURLMsg (%d)\n", msg->msg);
+						sprintf(l_result, "E: CURLMsg (%d)\n", msg->msg);
 					}
-					if (C < MAX_SIZE) {
+					if (g_queueRequest.size()!=0) {
 						init(cm);
 						U++; /* just to prevent it from remaining at 0 if there are more
 							 URLs to get */
@@ -469,7 +507,7 @@ namespace Network
 
 	void Http::Get(const std::string &url)
 	{
-		m_queueRequest.push(url);
+		g_queueRequest.push(url);
 		if (!m_living.load())
 		{
 			std::thread networker(RequestRun);

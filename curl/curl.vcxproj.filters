@@ -36,6 +36,9 @@
     <ClInclude Include="Network\URL.h">
       <Filter>Network</Filter>
     </ClInclude>
+    <ClInclude Include="SimpleLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -49,6 +52,9 @@
     </ClCompile>
     <ClCompile Include="Network\URL.cpp">
       <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="SimpleLog.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
