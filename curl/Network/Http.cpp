@@ -7,100 +7,6 @@
 #include "Http.h"
 #include "..\SimpleLog.h"
 
-struct data {
-	char trace_ascii; /* 1 or 0 */
-	FILE *stream;
-};
-
-static
-void dump(const char *text,
-	FILE *stream, unsigned char *ptr, size_t size,
-	char nohex)
-{
-	size_t i;
-	size_t c;
-
-	unsigned int width = 0x10;
-
-	if (nohex)
-		/* without the hex output, we can fit more on screen */
-		width = 0x40;
-
-	fprintf(stream, "%s, %10.10ld bytes (0x%8.8lx)\n",
-		text, (long)size, (long)size);
-
-	for (i = 0; i < size; i += width) {
-
-		fprintf(stream, "%4.4lx: ", (long)i);
-
-		if (!nohex) {
-			/* hex not disabled, show it */
-			for (c = 0; c < width; c++)
-				if (i + c < size)
-					fprintf(stream, "%02x ", ptr[i + c]);
-				else
-					fputs("   ", stream);
-		}
-
-		for (c = 0; (c < width) && (i + c < size); c++) {
-			/* check for 0D0A; if found, skip past and start a new line of output */
-			if (nohex && (i + c + 1 < size) && ptr[i + c] == 0x0D && ptr[i + c + 1] == 0x0A) {
-				i += (c + 2 - width);
-				break;
-			}
-			fprintf(stream, "%c",
-				(ptr[i + c] >= 0x20) && (ptr[i + c] < 0x80) ? ptr[i + c] : '.');
-			/* check again for 0D0A, to avoid an extra \n if it's at width */
-			if (nohex && (i + c + 2 < size) && ptr[i + c + 1] == 0x0D && ptr[i + c + 2] == 0x0A) {
-				i += (c + 3 - width);
-				break;
-			}
-		}
-		fputc('\n', stream); /* newline */
-	}
-	fflush(stream);
-}
-
-static
-int my_trace(CURL *handle, curl_infotype type,
-	char *data, size_t size,
-	void *userp)
-{
-	struct data *config = (struct data *)userp;
-	const char *text;
-	(void)handle; /* prevent compiler warning */
-
-	switch (type) {
-	case CURLINFO_TEXT:
-		fprintf(config->stream, "== Info: %s", data);
-		/* FALLTHROUGH */
-	default: /* in case a new one is introduced to shock us */
-		return 0;
-
-	case CURLINFO_HEADER_OUT:
-		text = "=> Send header";
-		break;
-	case CURLINFO_DATA_OUT:
-		text = "=> Send data";
-		break;
-	case CURLINFO_SSL_DATA_OUT:
-		text = "=> Send SSL data";
-		break;
-	case CURLINFO_HEADER_IN:
-		text = "<= Recv header";
-		break;
-	case CURLINFO_DATA_IN:
-		text = "<= Recv data";
-		break;
-	case CURLINFO_SSL_DATA_IN:
-		text = "<= Recv SSL data";
-		break;
-	}
-
-	dump(text, config->stream, (unsigned char *)data, size, config->trace_ascii);
-	return 0;
-}
-
 namespace Network
 {
 	Http* Http::instance = NULL;
@@ -213,14 +119,6 @@ namespace Network
 			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
 			chunk->size = 0;    /* no data at this point */
 
-#ifdef _DEBUG
-			struct data config;
-			config.trace_ascii = 1;
-			config.stream = fopen("dump", "a+");
-			curl_easy_setopt(handle, CURLOPT_DEBUGFUNCTION, my_trace);
-			curl_easy_setopt(handle, CURLOPT_DEBUGDATA, &config);
-#endif
-
 
 
 			curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0);
@@ -244,9 +142,6 @@ namespace Network
 			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
 			/* Perform the request, res will get the return code */
 			res = curl_easy_perform(handle);
-#ifdef _DEBUG
-			fclose(config.stream);
-#endif // DEBUG
 
 
 			/* Check for errors */
@@ -281,17 +176,17 @@ namespace Network
 
 	void Http::Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async/*=true*/)
 	{
-		if (async == true)
+		/*if (async == true)
 		{
-			std::thread http(Http::GetRun, URL(url), action, id);
-			http.detach();
+		std::thread http(Http::GetRun, URL(url), action, id);
+		http.detach();
 		}
 		else
 		{
-			GetRun(url, action, id);
-		}
+		GetRun(url, action, id);
+		}*/
+		Get(url.getUrl(), action, id);
 	}
-
 
 #define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     0.001
 	int Http::xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
@@ -336,49 +231,31 @@ namespace Network
 		;
 	}
 
-	std::queue<std::string> g_queueRequest({
-		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
-		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
-		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
-		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1",
-		"http://open.55.la/index.php?class=WeChat&type=GetCode&guid=10888&token=KY0SQ3FX996PU1ZO&soft_type=1"
-	});
-	std::atomic_bool m_living{false};
 
-	struct PrivateData{
-		MemoryStruct m_memory;
-		std::string m_url;
-	};
+
+	RequestQueue g_requestQueue;
+	std::atomic_bool m_living{ false };
 
 	static size_t
 		WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 	{
 		size_t realsize = size * nmemb;
-		PrivateData *data = (struct PrivateData *)userp;
+		Network::Memory *l_memory = (Network::Memory *)userp;
 
-		data->m_memory.memory = (char *)realloc(data->m_memory.memory, data->m_memory.size + realsize + 1);
-		if (data->m_memory.memory == NULL) {
+		l_memory->m_memory = (char *)realloc(l_memory->m_memory, l_memory->m_size + realsize + 1);
+		if (l_memory->m_memory == NULL) {
 			/* out of memory! */
 			printf("not enough memory (realloc returned NULL)\n");
 			return 0;
 		}
 
-		memcpy(&(data->m_memory.memory[data->m_memory.size]), contents, realsize);
-		data->m_memory.size += realsize;
-		data->m_memory.memory[data->m_memory.size] = 0;
+		memcpy(&(l_memory->m_memory[l_memory->m_size]), contents, realsize);
+		l_memory->m_size += realsize;
+		l_memory->m_memory[l_memory->m_size] = 0;
 
 		return realsize;
 	}
 
-
-
-	static size_t cb(char *d, size_t n, size_t l, void *p)
-	{
-		/* take care of the data here, ignored in this example */
-		(void)d;
-		(void)p;
-		return n*l;
-	}
 
 #ifdef _DEBUG
 	/*测试是否所有request请求都会被执行*/
@@ -390,24 +267,21 @@ namespace Network
 		CURL *eh = curl_easy_init();
 
 		//设置数据
-		PrivateData *l_privateData = new PrivateData;
-		l_privateData->m_url = g_queueRequest.front();
-		l_privateData->m_memory.memory = (char *)malloc(1);
-		l_privateData->m_memory.size = 0;
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, l_privateData);
+		//获取首个未处理的请求与用于读写的memory
+		Request  &l_pendingProcessRequest = g_requestQueue.FrontPendingProcessRequest();
+		Network::Memory &l_memory = l_pendingProcessRequest.GetMemory();
+		//设置easy handle option
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, &l_pendingProcessRequest);
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)l_privateData);
-
+		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)&l_memory);
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
 #ifdef _DEBUG
-		_input_requests.push_back(g_queueRequest.front());
+		_input_requests.push_back(l_pendingProcessRequest.GetUrl());
 #endif // _DEBUG
 
 		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-		curl_easy_setopt(eh, CURLOPT_URL, g_queueRequest.front().c_str());
-
-
-		g_queueRequest.pop();
+		curl_easy_setopt(eh, CURLOPT_URL, l_pendingProcessRequest.GetUrl().c_str());
+		l_pendingProcessRequest.SetPendingProcess(false);
 		curl_multi_add_handle(cm, eh);
 	}
 
@@ -433,7 +307,7 @@ namespace Network
 		while (true)
 		{
 			//当队列为空时，则等待元素
-			while (g_queueRequest.empty() == true)
+			while (!g_requestQueue.HasPendingProcessRequest())
 			{
 #ifdef _DEBUG
 				std::sort(_input_requests.begin(), _input_requests.end());
@@ -452,7 +326,7 @@ namespace Network
 
 			//初始化请求体
 			int l_initNum = 0;
-			while (g_queueRequest.size() != 0 && l_initNum++ < MAX_SIZE)
+			while (g_requestQueue.HasPendingProcessRequest() && l_initNum++ < MAX_SIZE)
 			{
 				init(cm);
 			}
@@ -469,14 +343,12 @@ namespace Network
 					//将cm中的fd分别读到三个fd_set当中，M值代表当前读取了多少个可用fd,疑问是M是什么意思
 					if (curl_multi_fdset(cm, &R, &W, &E, &M)) {
 						fprintf(stderr, "E: curl_multi_fdset\n");
-						//return EXIT_FAILURE;
 						return;
 					}
 					//An application using the libcurl multi interface should call curl_multi_timeout to figure out how long it should wait for socket actions - at most - before proceeding
 					//获取自身该适当等待多久再次进行perform操作
 					if (curl_multi_timeout(cm, &L)) {
 						fprintf(stderr, "E: curl_multi_timeout\n");
-						//return EXIT_FAILURE;
 						return;
 					}
 					//应该再过多长时间再次perform或select
@@ -498,49 +370,37 @@ namespace Network
 						if (0 > select(M + 1, &R, &W, &E, &T)) {
 							fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
 								M + 1, L, errno, strerror(errno));
-							//return EXIT_FAILURE;
 							return;
 						}
 					}
 				}
 
 				while ((msg = curl_multi_info_read(cm, &Q))) {
-					char l_result[MAX_PATH];
-					if (msg->msg == CURLMSG_DONE) {
-						PrivateData *l_privateData;
-						CURL *e = msg->easy_handle;
-						curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &l_privateData);
-						_excuted_requests.push_back(l_privateData->m_url);
-						if (msg->data.result == CURLE_OK)
-						{
+
+					Request *request;
+					CURL *e = msg->easy_handle;
+					curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &request);
 #ifdef _DEBUG
-							static int i;
-							std::string htmlname = std::to_string(i++) + ".html";
-							FILE * pFile = fopen(htmlname.c_str(), "wb");
-							fwrite(l_privateData->m_memory.memory, sizeof(char), l_privateData->m_memory.size, pFile);
-							fclose(pFile);
+					_excuted_requests.push_back(request->GetUrl());
 #endif // _DEBUG
-							//通知外界结果
-						}
-						else
-						{
-#ifdef _DEBUG
-							sprintf(l_result, "R: %d - %s <%s>\n",
-								msg->data.result, curl_easy_strerror(msg->data.result), l_privateData->m_url.c_str());
-							SL_LOG(l_result);
-#endif // _DEBUG
-							//通知外界结果
-						}
-						
-						delete l_privateData->m_memory.memory;
-						delete l_privateData;
-						curl_multi_remove_handle(cm, e);
-						curl_easy_cleanup(e);
+					/*设置response*/
+					Response *l_response = new Response;
+					l_response->SetResult(msg->data.result);
+					if (msg->data.result == CURLE_OK)
+					{
+						l_response->SetMemory(&request->GetMemory());
 					}
-					else {
-						sprintf(l_result, "E: CURLMsg (%d)\n", msg->msg);
-					}
-					if (g_queueRequest.size()!=0) {
+					/*将response返回给用户*/
+					request->GetAction()->Do(l_response);
+
+					/*释放获取内容时的内存*/
+					g_requestQueue.PopProcessedRequest();
+
+
+					curl_multi_remove_handle(cm, e);
+					curl_easy_cleanup(e);
+
+					if (g_requestQueue.HasPendingProcessRequest()) {
 						init(cm);
 						U++; /* just to prevent it from remaining at 0 if there are more
 							 URLs to get */
@@ -553,9 +413,11 @@ namespace Network
 	}
 
 
-	void Http::Get(const std::string &url)
+	void Http::Get(const std::string &url, HttpAction *action)
 	{
-		g_queueRequest.push(url);
+		Request l_request(url, action);
+
+		g_requestQueue.Push(l_request);
 		if (!m_living.load())
 		{
 			std::thread networker(RequestRun);
