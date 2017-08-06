@@ -12,121 +12,144 @@ namespace Network
 	{
 	public:
 		Memory(){
-			m_memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
 			m_size = 0;    /* no data at this point */
+			m_memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
+		} 
+		/*deep copy*/
+		Memory(const Memory &memory) {
+			m_size = memory.m_size;
+			m_memory =(char *) malloc(memory.m_size);
+			memcpy(m_memory, memory.m_memory, memory.m_size);
+		}
+
+		~Memory() {
+			delete m_memory;
+			m_memory = 0;
 		}
 		char *m_memory;
 		size_t m_size;
 	};
+
+	/*HTTP请求体*/
+	class Request {
+	public:
+		Request() = delete;
+		Request(const std::string &url) :m_url(url), m_pendingProcess(true) {
+		}
+		Request(const Request &request) :m_url(request.m_url), m_pendingProcess(request.m_pendingProcess) {
+
+		}
+		const std::string &GetUrl()const {
+			return m_url;
+		}
+		void SetPendingProcess(bool pending) {
+			m_pendingProcess = pending;
+		}
+		bool isPendingProcess()const {
+			return m_pendingProcess;
+		}
+		~Request() {  }
+	private:
+		std::string m_url;
+		bool m_pendingProcess;
+	};
+
 	/*HTTP请求结果*/
 	class Response{
 	public:
-		Response(){}
-
-		~Response(){
-			OutputDebugStringA("Response Released");
+		Response():m_code(CURLE_OK),m_memory(){}
+		Response(const Response &response):m_code(response.m_code), m_memory(response.m_memory) {
 		}
+		~Response(){}
 		void SetResult(CURLcode code){
 			m_code = code;
 		}
-		CURLcode GetResult(){
+		CURLcode GetResult()const{
 			return m_code;
 		}
 
-		Memory *GetMemory(){
+		const Memory &GetMemory()const{
 			return m_memory;
 		}
-		void SetMemory(Memory *memory){
-			m_memory = memory;
+		Memory &GetMemory(){
+			return m_memory;
 		}
 	private:
-		Memory *m_memory;
+		Memory m_memory;
 		CURLcode m_code;
 	};
 
 	class HttpAction{
 	public:
-		HttpAction() :m_response(nullptr){}
-		virtual void Do(Network::Response *response){
-			m_response = response;
+		HttpAction(){}
+		virtual void Do(std::shared_ptr<Network::Response> response /*Network::Response *response*/){
 		}
 		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
 
-		~HttpAction(){
-			;//ReleaseResponse();
-		}
-	private:
-		void ReleaseResponse(){
-			if (nullptr != m_response)
-			{
-				delete m_response;
-			}
-			m_response = nullptr;
-		}
-		Network::Response *m_response;
+		~HttpAction(){}
+
 	};
 
-	class Request{
-	public:
-		Request(const std::string &url, HttpAction *action) :m_pendingProcess(true){
-			m_url = url;
-			m_action = action;
-		}
-		const std::string &GetUrl(){
-			return m_url;
-		}
-		HttpAction *GetAction(){
-			return m_action;
-		}
-		void SetPendingProcess(bool pending){
-			m_pendingProcess = pending;
-		}
-		bool isPendingProcess(){
-			return m_pendingProcess;
-		}
-		Memory &GetMemory(){
-			return m_memory;
-		}
-		~Request(){  }
-	private:
-		std::string m_url;
-		HttpAction *m_action;
-		bool m_pendingProcess;
-		Memory m_memory;
-	};
 
-	class RequestQueue{
+	class GetWork {
 	public:
-		Request &FrontPendingProcessRequest(){
-			for (Request &request : m_requestQueue)
+		GetWork(const std::string &url, std::shared_ptr<HttpAction> action) :m_request(url), m_response(),m_httpAction(action){
+
+		}
+		GetWork(const GetWork &getwork):m_request(getwork.m_request), m_response(getwork.m_response), m_httpAction(getwork.m_httpAction) {
+		}
+		const Request &GetRequest()const {
+			return m_request;
+		}
+		Request &GetRequest() {
+			return m_request;
+		}
+		const Response &GetResponse()const {
+			return m_response;
+		}
+		Response &GetResponse() {
+			return m_response;
+		}
+
+		std::shared_ptr<HttpAction> GetHttpAction() {
+			return m_httpAction;
+		}
+	private:
+		Request m_request;
+		Response m_response;
+		std::shared_ptr<HttpAction> m_httpAction;
+	};
+	class GetWorkQueue{
+	public:
+		GetWork &FrontPendingProcessGetWork(){
+			for (GetWork &httpGetWork : m_getWorkQueue)
 			{
-				if (request.isPendingProcess())
-					return request;
+				if (httpGetWork.GetRequest().isPendingProcess())
+					return httpGetWork;
 			}
 		}
-		bool HasPendingProcessRequest(){
-			for (Request &request : m_requestQueue)
+		bool HasPendingProcessGetWork(){
+			for (GetWork &httpGetWork : m_getWorkQueue)
 			{
-				if (request.isPendingProcess())
+				if (httpGetWork.GetRequest().isPendingProcess())
 					return true;
 			}
 			return false;
 		}
-		void Push(Request request){
-			m_requestQueue.push_back(request);
+		void Push(const GetWork &getwork){
+			m_getWorkQueue.push_back(getwork);
 		}
 		void PopProcessedRequest(){
-			m_requestQueue.remove_if([](Request request){
-				return !request.isPendingProcess();
+			m_getWorkQueue.remove_if([](const GetWork &getwork){
+				return !getwork.GetRequest().isPendingProcess();
 			});
 		}
 		bool empty(){
-			return m_requestQueue.empty();
+			return m_getWorkQueue.empty();
 		}
 	private:
-		std::list<Request> m_requestQueue;
+		std::list<GetWork> m_getWorkQueue;
 	};
-	extern RequestQueue g_requestQueue;
 
 
 
@@ -161,13 +184,8 @@ namespace Network
 	public:
 		static Http* GetInstance();
 
-		typedef void(*FinishedCallback)(MemoryStruct *memory);
-
 	public:
-		void Get(const std::string &url, HttpAction *httpAction);
-
-
-
+		void Get(const std::string &url, std::shared_ptr<HttpAction> httpAction);
 		void Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async=true);
 		void Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async=true);
 		~Http();

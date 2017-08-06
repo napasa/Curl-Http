@@ -233,11 +233,10 @@ namespace Network
 
 
 
-	RequestQueue g_requestQueue;
+	GetWorkQueue g_getWorkQueue;
 	std::atomic_bool m_living{ false };
 
-	static size_t
-		WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
+	static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 	{
 		size_t realsize = size * nmemb;
 		Network::Memory *l_memory = (Network::Memory *)userp;
@@ -268,20 +267,20 @@ namespace Network
 
 		//设置数据
 		//获取首个未处理的请求与用于读写的memory
-		Request  &l_pendingProcessRequest = g_requestQueue.FrontPendingProcessRequest();
-		Network::Memory &l_memory = l_pendingProcessRequest.GetMemory();
+		GetWork& l_pendingProcessGetWork = g_getWorkQueue.FrontPendingProcessGetWork();
+		Network::Memory &l_memory = l_pendingProcessGetWork.GetResponse().GetMemory();
 		//设置easy handle option
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, &l_pendingProcessRequest);
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, &l_pendingProcessGetWork);
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)&l_memory);
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
 #ifdef _DEBUG
-		_input_requests.push_back(l_pendingProcessRequest.GetUrl());
+		_input_requests.push_back(l_pendingProcessGetWork.GetRequest().GetUrl());
 #endif // _DEBUG
 
 		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-		curl_easy_setopt(eh, CURLOPT_URL, l_pendingProcessRequest.GetUrl().c_str());
-		l_pendingProcessRequest.SetPendingProcess(false);
+		curl_easy_setopt(eh, CURLOPT_URL, l_pendingProcessGetWork.GetRequest().GetUrl().c_str());
+		l_pendingProcessGetWork.GetRequest().SetPendingProcess(false);
 		curl_multi_add_handle(cm, eh);
 	}
 
@@ -303,11 +302,10 @@ namespace Network
 		uses */
 		curl_multi_setopt(cm, CURLMOPT_MAXCONNECTS, MAX_SIZE);
 
-
 		while (true)
 		{
 			//当队列为空时，则等待元素
-			while (!g_requestQueue.HasPendingProcessRequest())
+			while (!g_getWorkQueue.HasPendingProcessGetWork())
 			{
 #ifdef _DEBUG
 				std::sort(_input_requests.begin(), _input_requests.end());
@@ -326,7 +324,7 @@ namespace Network
 
 			//初始化请求体
 			int l_initNum = 0;
-			while (g_requestQueue.HasPendingProcessRequest() && l_initNum++ < MAX_SIZE)
+			while (g_getWorkQueue.HasPendingProcessGetWork() && l_initNum++ < MAX_SIZE)
 			{
 				init(cm);
 			}
@@ -343,24 +341,21 @@ namespace Network
 					//将cm中的fd分别读到三个fd_set当中，M值代表当前读取了多少个可用fd,疑问是M是什么意思
 					if (curl_multi_fdset(cm, &R, &W, &E, &M)) {
 						fprintf(stderr, "E: curl_multi_fdset\n");
+						m_living.store(false);
 						return;
 					}
 					//An application using the libcurl multi interface should call curl_multi_timeout to figure out how long it should wait for socket actions - at most - before proceeding
 					//获取自身该适当等待多久再次进行perform操作
 					if (curl_multi_timeout(cm, &L)) {
 						fprintf(stderr, "E: curl_multi_timeout\n");
+						m_living.store(false);
 						return;
 					}
 					//应该再过多长时间再次perform或select
 					if (L == -1)
 						L = 100;
-
 					if (M == -1) {
-#ifdef WIN32
 						Sleep(L);
-#else
-						sleep((unsigned int)L / 1000);
-#endif
 					}
 					else {
 						T.tv_sec = L / 1000;
@@ -370,6 +365,7 @@ namespace Network
 						if (0 > select(M + 1, &R, &W, &E, &T)) {
 							fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
 								M + 1, L, errno, strerror(errno));
+							m_living.store(false);
 							return;
 						}
 					}
@@ -377,30 +373,22 @@ namespace Network
 
 				while ((msg = curl_multi_info_read(cm, &Q))) {
 
-					Request *request;
+					GetWork *l_getWork;
 					CURL *e = msg->easy_handle;
-					curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &request);
+					curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &l_getWork);
 #ifdef _DEBUG
-					_excuted_requests.push_back(request->GetUrl());
+					_excuted_requests.push_back(l_getWork->GetRequest().GetUrl());
 #endif // _DEBUG
-					/*设置response*/
-					Response *l_response = new Response;
-					l_response->SetResult(msg->data.result);
-					if (msg->data.result == CURLE_OK)
-					{
-						l_response->SetMemory(&request->GetMemory());
-					}
+					l_getWork->GetResponse().SetResult(msg->data.result);
 					/*将response返回给用户*/
-					request->GetAction()->Do(l_response);
-
-					/*释放获取内容时的内存*/
-					g_requestQueue.PopProcessedRequest();
+					l_getWork->GetHttpAction()->Do(std::make_shared<Response>(l_getWork->GetResponse()));
+					g_getWorkQueue.PopProcessedRequest();
 
 
 					curl_multi_remove_handle(cm, e);
 					curl_easy_cleanup(e);
 
-					if (g_requestQueue.HasPendingProcessRequest()) {
+					if (g_getWorkQueue.HasPendingProcessGetWork()) {
 						init(cm);
 						U++; /* just to prevent it from remaining at 0 if there are more
 							 URLs to get */
@@ -413,11 +401,10 @@ namespace Network
 	}
 
 
-	void Http::Get(const std::string &url, HttpAction *action)
+	void Http::Get(const std::string &url, std::shared_ptr<HttpAction> action)
 	{
-		Request l_request(url, action);
-
-		g_requestQueue.Push(l_request);
+		GetWork l_getWork(url, action);
+		g_getWorkQueue.Push(l_getWork);
 		if (!m_living.load())
 		{
 			std::thread networker(RequestRun);

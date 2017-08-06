@@ -13,8 +13,7 @@
 class Action : public Network::HttpAction{
 public:
 	Action(){}
-	virtual void Do(Network::Response *response){
-		HttpAction::Do(response);
+	virtual void Do(std::shared_ptr<Network::Response> response){
 		char l_result[MAX_PATH];
 		if (response->GetResult() != CURLE_OK)
 		{
@@ -30,10 +29,11 @@ public:
 			static int i;
 			std::string htmlname = std::to_string(i++) + ".html";
 			FILE * pFile = fopen(htmlname.c_str(), "wb");
-			fwrite(response->GetMemory()->m_memory, sizeof(char), response->GetMemory()->m_size, pFile);
+			fwrite(response->GetMemory().m_memory, sizeof(char), response->GetMemory().m_size, pFile);
 			fclose(pFile);
 #endif // _DEBUG
 		}
+		HttpAction::Do(response);
 	}
 	~Action(){}
 };
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
 {
 	curl_global_init(CURL_GLOBAL_ALL);
 	{
-		Network::Http::GetInstance()->Get("www.baidu.com", new Action());
+		Network::Http::GetInstance()->Get("www.baidu.com",  std::make_shared<Action>());
 	}
 	
 	std::string url;
@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 	while (std::cin>> url)
 	{
 		std::cout << "Receive Request: ";
-		Network::Http::GetInstance()->Get(url, new Action());
+		Network::Http::GetInstance()->Get(url, std::make_shared<Action>());
 		std::cout << url << std::endl;
 		std::cout << "Input Request:  ";
 	}
