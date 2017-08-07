@@ -9,6 +9,8 @@
 
 namespace Network
 {
+
+
 	Http* Http::instance = NULL;
 	Http* Http::GetInstance(){
 		if (instance == NULL)
@@ -18,222 +20,78 @@ namespace Network
 		return instance;
 	}
 
-	size_t Http::WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
-	{
-		size_t realsize = size * nmemb;
-		MemoryStruct *mem = (MemoryStruct *)userp;
-
-		mem->memory = (char *)realloc(mem->memory, mem->size + realsize + 1);
-		assert(NULL != mem->memory);
-		memcpy(&(mem->memory[mem->size]), contents, realsize);
-		mem->size += realsize;
-		mem->memory[mem->size] = 0;
-
-		return realsize;
-	}
-
-	void Http::GetRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id)
-	{
-		CURL *handle = curl_easy_init();
-		if (handle)
-		{
-
-			MemoryStruct *chunk = new MemoryStruct;
-			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
-			chunk->size = 0;    /* no data at this point */
-
-
-			CURLcode res;
-			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
-			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
-			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-			curl_easy_setopt(handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-			curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
-			curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
-			res = curl_easy_perform(handle);
-
-			/* check for errors */
-			if (CURLE_OK != res)
-			{
-				chunk->status = false;
-				std::string errCode = std::to_string(res);
-				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
-				memcpy(&(chunk->memory[chunk->size]), errCode.c_str(), errCode.size());
-				chunk->size += errCode.size();
-				chunk->memory[chunk->size] = 0;
-			}
-			else
-			{
-				chunk->status = true;
-			}
-			chunk->url = url;
-			chunk->id = id;
-			action->Do(chunk);
-			free(chunk->memory);
-			delete chunk;
-			curl_easy_cleanup(handle);
-		}
-	}
-
-	struct myprogress {
-		double lastruntime;
-		std::shared_ptr<AbstractAction> action;
-		CURL *curl;
-	};
-	void Http::PostRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename)
-	{
-		CURL *handle;
-		CURLcode res;
-
-		struct myprogress prog;
-
-		struct curl_httppost *formpost = NULL;
-		struct curl_httppost *lastptr = NULL;
-
-		struct curl_slist *headerlist = NULL;
-		static const char buf[] = "Expect:";
-
-		/* Fill in the file upload field */
-		curl_formadd(&formpost,
-			&lastptr,
-			CURLFORM_COPYNAME, "file",
-			CURLFORM_FILE, postedFilename.c_str(),
-			CURLFORM_END);
-
-
-		/* Fill in the submit field too, even if this is rarely needed */
-		curl_formadd(&formpost,
-			&lastptr,
-			CURLFORM_COPYNAME, "submit",
-			CURLFORM_COPYCONTENTS, "send",
-			CURLFORM_END);
-
-		handle = curl_easy_init();
-		/* initialize custom header list (stating that Expect: 100-continue is not
-		wanted */
-		headerlist = curl_slist_append(headerlist, buf);
-		if (handle) {
-			prog.curl = handle;
-			prog.action = action;
-			MemoryStruct *chunk = new MemoryStruct;
-			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
-			chunk->size = 0;    /* no data at this point */
-
-
-
-			curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0);
-			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
-			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
-			curl_easy_setopt(handle, CURLOPT_PROGRESSFUNCTION, older_progress);
-			/* pass the struct pointer into the progress function */
-			curl_easy_setopt(handle, CURLOPT_PROGRESSDATA, &prog);
-
-#if LIBCURL_VERSION_NUM >= 0x072000
-			curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, xferinfo);
-			/* pass the struct pointer into the xferinfo function, note that this is
-			an alias to CURLOPT_PROGRESSDATA */
-			curl_easy_setopt(handle, CURLOPT_XFERINFODATA, &prog);
-#endif
-			/* what URL that receives this POST */
-			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
-			curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headerlist);
-			curl_easy_setopt(handle, CURLOPT_HTTPPOST, formpost);
-			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1L);
-			/* Perform the request, res will get the return code */
-			res = curl_easy_perform(handle);
-
-
-			/* Check for errors */
-			if (res != CURLE_OK)
-			{
-
-				chunk->status = false;
-				std::string errCode = std::to_string(res);
-				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
-				memcpy(&(chunk->memory[chunk->size]), errCode.c_str(), errCode.size());
-				chunk->size += errCode.size();
-				chunk->memory[chunk->size] = 0;
-			}
-			else
-			{
-				chunk->status = true;
-			}
-			chunk->id = id;
-			action->Do(chunk);
-			free(chunk->memory);
-			delete chunk;
-
-			/* always cleanup */
-			curl_easy_cleanup(handle);
-			/* then cleanup the formpost chain */
-			curl_formfree(formpost);
-			/* free slist */
-			curl_slist_free_all(headerlist);
-		}
-	}
-
-
-	void Http::Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async/*=true*/)
-	{
-		/*if (async == true)
-		{
-		std::thread http(Http::GetRun, URL(url), action, id);
-		http.detach();
-		}
-		else
-		{
-		GetRun(url, action, id);
-		}*/
-		Get(url.getUrl(), action, id);
-	}
-
-#define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     0.001
-	int Http::xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
-	{
-		struct myprogress *myp = (struct myprogress *)p;
-		CURL *curl = myp->curl;
-		double curtime = 0;
-
-		curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &curtime);
-
-		if ((curtime - myp->lastruntime) >= MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL) {
-			myp->lastruntime = curtime;
-			return myp->action->Progress(curtime, 0, 0, (double)ultotal, (double)ulnow);
-		}
-		return 0;
-	}
-
-	int Http::older_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
-	{
-		return xferinfo(p,
-			(curl_off_t)dltotal,
-			(curl_off_t)dlnow,
-			(curl_off_t)ultotal,
-			(curl_off_t)ulnow);
-	}
-
-
-	void Http::Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async/*=true*/)
-	{
-		if (async == true)
-		{
-			std::thread http(Http::PostRun, url, action, id, postedFilename);
-			http.detach();
-		}
-		else
-		{
-			PostRun(url, action, id, postedFilename);
-		}
-	}
 	Http::~Http()
 	{
 		;
 	}
 
 
+	/*HTTP Get Task. You Used HTTP::Get Method a time Which created a GetTask, System will push your Task into GetTaskQueue*/
+	class GetTask {
+	public:
+		GetTask(const std::string &url, std::shared_ptr<HttpAction> action) :m_request(url), m_response(), m_httpAction(action) {
 
-	GetWorkQueue g_getWorkQueue;
+		}
+		GetTask(const GetTask &gettask) :m_request(gettask.m_request), m_response(gettask.m_response), m_httpAction(gettask.m_httpAction) {
+		}
+		const Request &GetRequest()const {
+			return m_request;
+		}
+		Request &GetRequest() {
+			return m_request;
+		}
+		const Response &GetResponse()const {
+			return m_response;
+		}
+		Response &GetResponse() {
+			return m_response;
+		}
+
+		std::shared_ptr<HttpAction> GetHttpAction() {
+			return m_httpAction;
+		}
+	private:
+		Request m_request;
+		Response m_response;
+		std::shared_ptr<HttpAction> m_httpAction;
+	};
+
+	/*GetTaskQueue maintains a task queue to perform task orderly*/
+	class GetTaskQueue {
+	public:
+		GetTask &FrontUnhandledTask() {
+			for (GetTask &httpGetTask : m_getTaskQueue)
+			{
+				if (httpGetTask.GetRequest().isUnhandled())
+					return httpGetTask;
+			}
+		}
+		bool HasUnhandledTask() {
+			for (GetTask &httpGetTask : m_getTaskQueue)
+			{
+				if (httpGetTask.GetRequest().isUnhandled())
+					return true;
+			}
+			return false;
+		}
+		void Push(const GetTask &gettask) {
+			m_getTaskQueue.push_back(gettask);
+		}
+		void PopProcessedRequest() {
+			m_getTaskQueue.remove_if([](const GetTask &getwork) {
+				return !getwork.GetRequest().isUnhandled();
+			});
+		}
+		bool empty() {
+			return m_getTaskQueue.empty();
+		}
+	private:
+		std::list<GetTask> m_getTaskQueue;
+	};
+
+
+	GetTaskQueue g_getTaskQueue;
+	/*atomic variable determines TaskExcuter Thread Living Status*/
 	std::atomic_bool m_living{ false };
 
 	static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
@@ -242,11 +100,8 @@ namespace Network
 		Network::Memory *l_memory = (Network::Memory *)userp;
 
 		l_memory->m_memory = (char *)realloc(l_memory->m_memory, l_memory->m_size + realsize + 1);
-		if (l_memory->m_memory == NULL) {
-			/* out of memory! */
-			printf("not enough memory (realloc returned NULL)\n");
+		if (l_memory->m_memory == NULL) 
 			return 0;
-		}
 
 		memcpy(&(l_memory->m_memory[l_memory->m_size]), contents, realsize);
 		l_memory->m_size += realsize;
@@ -257,7 +112,7 @@ namespace Network
 
 
 #ifdef _DEBUG
-	/*测试是否所有request请求都会被执行*/
+	/*Test Whether All Request Will be Excuted*/
 	std::vector<std::string> _input_requests;
 	std::vector<std::string> _excuted_requests;
 #endif
@@ -265,26 +120,24 @@ namespace Network
 	{
 		CURL *eh = curl_easy_init();
 
-		//设置数据
-		//获取首个未处理的请求与用于读写的memory
-		GetWork& l_pendingProcessGetWork = g_getWorkQueue.FrontPendingProcessGetWork();
-		Network::Memory &l_memory = l_pendingProcessGetWork.GetResponse().GetMemory();
+		GetTask& unhandledTask = g_getTaskQueue.FrontUnhandledTask();
+		Network::Memory &l_memory = unhandledTask.GetResponse().GetMemory();
 		//设置easy handle option
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, &l_pendingProcessGetWork);
+		curl_easy_setopt(eh, CURLOPT_PRIVATE, &unhandledTask);
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)&l_memory);
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
 #ifdef _DEBUG
-		_input_requests.push_back(l_pendingProcessGetWork.GetRequest().GetUrl());
+		_input_requests.push_back(unhandledTask.GetRequest().GetUrl());
 #endif // _DEBUG
 
 		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-		curl_easy_setopt(eh, CURLOPT_URL, l_pendingProcessGetWork.GetRequest().GetUrl().c_str());
-		l_pendingProcessGetWork.GetRequest().SetPendingProcess(false);
+		curl_easy_setopt(eh, CURLOPT_URL, unhandledTask.GetRequest().GetUrl().c_str());
+		unhandledTask.GetRequest().SetHandledStatus(false);
 		curl_multi_add_handle(cm, eh);
 	}
 
-	void RequestRun()
+	void Excutor()
 	{
 		m_living.store(true);
 
@@ -304,8 +157,8 @@ namespace Network
 
 		while (true)
 		{
-			//当队列为空时，则等待元素
-			while (!g_getWorkQueue.HasPendingProcessGetWork())
+			//Once Queue is empty, Pending it
+			while (!g_getTaskQueue.HasUnhandledTask())
 			{
 #ifdef _DEBUG
 				std::sort(_input_requests.begin(), _input_requests.end());
@@ -313,7 +166,7 @@ namespace Network
 				assert(_input_requests == _excuted_requests);
 #endif // _DEBUG
 			}
-			//初始化debug
+			//Init Debug
 #ifdef _DEBUG
 			_input_requests.clear();
 			_excuted_requests.clear();
@@ -322,36 +175,32 @@ namespace Network
 			M = Q = U = -1;
 			C = 0;
 
-			//初始化请求体
+
 			int l_initNum = 0;
-			while (g_getWorkQueue.HasPendingProcessGetWork() && l_initNum++ < MAX_SIZE)
+			while (g_getTaskQueue.HasUnhandledTask() && l_initNum++ < MAX_SIZE)
 			{
 				init(cm);
 			}
 			l_initNum = 0;
 			while (U) {
-				//读写CURLM中可用CURL数据。U值代表当前是否还有传输正在进行中。When running_handles is set to zero (0) on the return of this function, there is no longer any transfers in progress
-				//因此此处用U来循环执行
+				//when running_handles is set to zero (0) on the return of this function, there is no longer any transfers in progress
 				curl_multi_perform(cm, &U);
-				//当U==0时意味着数据全都读写完毕
+				//when U==0, all in finished
 				if (U) {
 					FD_ZERO(&R);
 					FD_ZERO(&W);
 					FD_ZERO(&E);
-					//将cm中的fd分别读到三个fd_set当中，M值代表当前读取了多少个可用fd,疑问是M是什么意思
 					if (curl_multi_fdset(cm, &R, &W, &E, &M)) {
 						fprintf(stderr, "E: curl_multi_fdset\n");
 						m_living.store(false);
 						return;
 					}
 					//An application using the libcurl multi interface should call curl_multi_timeout to figure out how long it should wait for socket actions - at most - before proceeding
-					//获取自身该适当等待多久再次进行perform操作
 					if (curl_multi_timeout(cm, &L)) {
-						fprintf(stderr, "E: curl_multi_timeout\n");
 						m_living.store(false);
 						return;
 					}
-					//应该再过多长时间再次perform或select
+					//optimum solution for next time timeout
 					if (L == -1)
 						L = 100;
 					if (M == -1) {
@@ -363,8 +212,8 @@ namespace Network
 						//The select() system call examines the I/O descriptor sets whose addresses are passed	in readfds, writefds, and exceptfds to see if some of their
 						//	descriptors are ready for reading, are ready for writing, or have an exceptional condition pending, respectively
 						if (0 > select(M + 1, &R, &W, &E, &T)) {
-							fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
-								M + 1, L, errno, strerror(errno));
+							/*fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
+								M + 1, L, errno, strerror(errno));*/
 							m_living.store(false);
 							return;
 						}
@@ -373,22 +222,23 @@ namespace Network
 
 				while ((msg = curl_multi_info_read(cm, &Q))) {
 
-					GetWork *l_getWork;
+					GetTask *task;
 					CURL *e = msg->easy_handle;
-					curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &l_getWork);
+					curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &task);
 #ifdef _DEBUG
-					_excuted_requests.push_back(l_getWork->GetRequest().GetUrl());
+					_excuted_requests.push_back(task->GetRequest().GetUrl());
 #endif // _DEBUG
-					l_getWork->GetResponse().SetResult(msg->data.result);
-					/*将response返回给用户*/
-					l_getWork->GetHttpAction()->Do(std::make_shared<Response>(l_getWork->GetResponse()));
-					g_getWorkQueue.PopProcessedRequest();
+					task->GetResponse().SetResult(msg->data.result);
+
+					/*Execute action indicate by user*/
+					task->GetHttpAction()->Do(std::make_shared<Response>(task->GetResponse()));
+					g_getTaskQueue.PopProcessedRequest();
 
 
 					curl_multi_remove_handle(cm, e);
 					curl_easy_cleanup(e);
 
-					if (g_getWorkQueue.HasPendingProcessGetWork()) {
+					if (g_getTaskQueue.HasUnhandledTask()) {
 						init(cm);
 						U++; /* just to prevent it from remaining at 0 if there are more
 							 URLs to get */
@@ -403,11 +253,11 @@ namespace Network
 
 	void Http::Get(const std::string &url, std::shared_ptr<HttpAction> action)
 	{
-		GetWork l_getWork(url, action);
-		g_getWorkQueue.Push(l_getWork);
+		GetTask task(url, action);
+		g_getTaskQueue.Push(task);
 		if (!m_living.load())
 		{
-			std::thread networker(RequestRun);
+			std::thread networker(Excutor);
 			networker.detach();
 		}
 	}
