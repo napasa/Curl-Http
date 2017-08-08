@@ -18,7 +18,6 @@ namespace Network
 		char *m_memory;
 		size_t m_size;
 	};
-	/*HTTP请求结果*/
 	class Response{
 	public:
 		Response(){}
@@ -43,29 +42,7 @@ namespace Network
 		Memory *m_memory;
 		CURLcode m_code;
 	};
-
-	class HttpAction{
-	public:
-		HttpAction() :m_response(nullptr){}
-		virtual void Do(Network::Response *response){
-			m_response = response;
-		}
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
-
-		~HttpAction(){
-			;//ReleaseResponse();
-		}
-	private:
-		void ReleaseResponse(){
-			if (nullptr != m_response)
-			{
-				delete m_response;
-			}
-			m_response = nullptr;
-		}
-		Network::Response *m_response;
-	};
-
+	class HttpAction;
 	class Request{
 	public:
 		Request(const std::string &url, HttpAction *action) :m_pendingProcess(true){
@@ -93,6 +70,27 @@ namespace Network
 		HttpAction *m_action;
 		bool m_pendingProcess;
 		Memory m_memory;
+	};
+	class HttpAction{
+	public:
+		HttpAction() :m_response(nullptr){}
+		virtual void Do(Network::Response *response){
+			m_response = response;
+		}
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
+
+		~HttpAction(){
+			;//ReleaseResponse();
+		}
+	private:
+		void ReleaseResponse(){
+			if (nullptr != m_response)
+			{
+				delete m_response;
+			}
+			m_response = nullptr;
+		}
+		Network::Response *m_response;
 	};
 
 	class RequestQueue{
@@ -152,7 +150,7 @@ namespace Network
 	public:
 		AbstractAction(){};
 		virtual void Do(const MemoryStruct *memory) = 0;
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 0; }
 		virtual ~AbstractAction(){}
 	};
 

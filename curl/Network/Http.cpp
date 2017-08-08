@@ -32,11 +32,22 @@ namespace Network
 		return realsize;
 	}
 
+	struct myprogress {
+		double lastruntime;
+		std::shared_ptr<AbstractAction> action;
+		CURL *curl;
+	};
+
 	void Http::GetRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id)
 	{
 		CURL *handle = curl_easy_init();
+
+		struct myprogress prog;
+
 		if (handle)
 		{
+			prog.curl = handle;
+			prog.action = action;
 
 			MemoryStruct *chunk = new MemoryStruct;
 			chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
@@ -47,8 +58,21 @@ namespace Network
 			curl_easy_setopt(handle, CURLOPT_URL, url.getUrl().c_str());
 			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
 			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+
+			curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0);
+			curl_easy_setopt(handle, CURLOPT_PROGRESSFUNCTION, older_progress);
+			/* pass the struct pointer into the progress function */
+			curl_easy_setopt(handle, CURLOPT_PROGRESSDATA, &prog);
+
+#if LIBCURL_VERSION_NUM >= 0x072000
+			curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, xferinfo);
+			/* pass the struct pointer into the xferinfo function, note that this is
+			an alias to CURLOPT_PROGRESSDATA */
+			curl_easy_setopt(handle, CURLOPT_XFERINFODATA, &prog);
+#endif
+
 			curl_easy_setopt(handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-			curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
+			//curl_easy_setopt(handle, CURLOPT_TIMEOUT, 10L);
 			curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 10L);
 			res = curl_easy_perform(handle);
 
@@ -57,6 +81,13 @@ namespace Network
 			{
 				chunk->status = false;
 				std::string errCode = std::to_string(res);
+				if (res == CURLE_ABORTED_BY_CALLBACK)
+				{
+					free(chunk->memory);
+					chunk->memory = (char *)malloc(1);  /* will be grown as needed by the realloc above */
+					chunk->size = 0;    /* no data at this point */
+
+				}
 				chunk->memory = (char *)realloc(chunk->memory, chunk->size + errCode.size() + 1);
 				memcpy(&(chunk->memory[chunk->size]), errCode.c_str(), errCode.size());
 				chunk->size += errCode.size();
@@ -75,11 +106,6 @@ namespace Network
 		}
 	}
 
-	struct myprogress {
-		double lastruntime;
-		std::shared_ptr<AbstractAction> action;
-		CURL *curl;
-	};
 	void Http::PostRun(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename)
 	{
 		CURL *handle;
@@ -124,7 +150,7 @@ namespace Network
 			curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0);
 			curl_easy_setopt(handle, CURLOPT_WRITEDATA, (void *)chunk);
 			curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-			curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
+			//curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
 			curl_easy_setopt(handle, CURLOPT_PROGRESSFUNCTION, older_progress);
 			/* pass the struct pointer into the progress function */
 			curl_easy_setopt(handle, CURLOPT_PROGRESSDATA, &prog);
@@ -176,16 +202,16 @@ namespace Network
 
 	void Http::Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async/*=true*/)
 	{
-		/*if (async == true)
+		if (async == true)
 		{
-		std::thread http(Http::GetRun, URL(url), action, id);
-		http.detach();
+			std::thread http(Http::GetRun, URL(url), action, id);
+			http.detach();
 		}
 		else
 		{
-		GetRun(url, action, id);
-		}*/
-		Get(url.getUrl(), action, id);
+			GetRun(url, action, id);
+		}
+		//Get(url.getUrl(), action, id);
 	}
 
 #define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     0.001
@@ -197,11 +223,7 @@ namespace Network
 
 		curl_easy_getinfo(curl, CURLINFO_TOTAL_TIME, &curtime);
 
-		if ((curtime - myp->lastruntime) >= MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL) {
-			myp->lastruntime = curtime;
-			return myp->action->Progress(curtime, 0, 0, (double)ultotal, (double)ulnow);
-		}
-		return 0;
+		return myp->action->Progress(curtime, (double)dltotal, (double)dlnow, 0, 0);
 	}
 
 	int Http::older_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
@@ -343,12 +365,14 @@ namespace Network
 					//将cm中的fd分别读到三个fd_set当中，M值代表当前读取了多少个可用fd,疑问是M是什么意思
 					if (curl_multi_fdset(cm, &R, &W, &E, &M)) {
 						fprintf(stderr, "E: curl_multi_fdset\n");
+						m_living.store(false);
 						return;
 					}
 					//An application using the libcurl multi interface should call curl_multi_timeout to figure out how long it should wait for socket actions - at most - before proceeding
 					//获取自身该适当等待多久再次进行perform操作
 					if (curl_multi_timeout(cm, &L)) {
 						fprintf(stderr, "E: curl_multi_timeout\n");
+						m_living.store(false);
 						return;
 					}
 					//应该再过多长时间再次perform或select
@@ -370,6 +394,7 @@ namespace Network
 						if (0 > select(M + 1, &R, &W, &E, &T)) {
 							fprintf(stderr, "E: select(%i,,,,%li): %i: %s\n",
 								M + 1, L, errno, strerror(errno));
+							m_living.store(false);
 							return;
 						}
 					}
