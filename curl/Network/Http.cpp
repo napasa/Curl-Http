@@ -211,7 +211,6 @@ namespace Network
 		{
 			GetRun(url, action, id);
 		}
-		//Get(url.getUrl(), action, id);
 	}
 
 #define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     0.001
@@ -253,59 +252,6 @@ namespace Network
 		;
 	}
 
-
-
-	RequestQueue g_requestQueue;
-	std::atomic_bool m_living{ false };
-
-	static size_t
-		WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
-	{
-		size_t realsize = size * nmemb;
-		Network::Memory *l_memory = (Network::Memory *)userp;
-
-		l_memory->m_memory = (char *)realloc(l_memory->m_memory, l_memory->m_size + realsize + 1);
-		if (l_memory->m_memory == NULL) {
-			/* out of memory! */
-			printf("not enough memory (realloc returned NULL)\n");
-			return 0;
-		}
-
-		memcpy(&(l_memory->m_memory[l_memory->m_size]), contents, realsize);
-		l_memory->m_size += realsize;
-		l_memory->m_memory[l_memory->m_size] = 0;
-
-		return realsize;
-	}
-
-
-#ifdef _DEBUG
-	/*测试是否所有request请求都会被执行*/
-	std::vector<std::string> _input_requests;
-	std::vector<std::string> _excuted_requests;
-#endif
-	static void init(CURLM *cm)
-	{
-		CURL *eh = curl_easy_init();
-
-		//设置数据
-		//获取首个未处理的请求与用于读写的memory
-		Request  &l_pendingProcessRequest = g_requestQueue.FrontPendingProcessRequest();
-		Network::Memory &l_memory = l_pendingProcessRequest.GetMemory();
-		//设置easy handle option
-		curl_easy_setopt(eh, CURLOPT_PRIVATE, &l_pendingProcessRequest);
-		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)&l_memory);
-		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
-#ifdef _DEBUG
-		_input_requests.push_back(l_pendingProcessRequest.GetUrl());
-#endif // _DEBUG
-
-		curl_easy_setopt(eh, CURLOPT_HEADER, 0L);
-		curl_easy_setopt(eh, CURLOPT_URL, l_pendingProcessRequest.GetUrl().c_str());
-		l_pendingProcessRequest.SetPendingProcess(false);
-		curl_multi_add_handle(cm, eh);
-	}
 
 
 }
