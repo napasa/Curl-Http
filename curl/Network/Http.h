@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include "URL.h"
-#include "..\..\include\curl\curl.h"
+#include <curl\curl.h>
 
 namespace Network
 {
@@ -162,10 +162,6 @@ namespace Network
 		typedef void(*FinishedCallback)(MemoryStruct *memory);
 
 	public:
-		void Get(const std::string &url, HttpAction *httpAction);
-
-
-
 		void Get(const URL &url, std::shared_ptr<AbstractAction> action, Id id, bool async=true);
 		void Post(const URL &url, std::shared_ptr<AbstractAction> action, Id id, const std::string &postedFilename, bool async=true);
 		~Http();

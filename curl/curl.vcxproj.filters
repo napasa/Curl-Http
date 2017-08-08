@@ -36,7 +36,7 @@
     <ClInclude Include="Network\URL.h">
       <Filter>Network</Filter>
     </ClInclude>
-    <ClInclude Include="SimpleLog.h">
+    <ClInclude Include="..\include\SimpleLog\SimpleLog.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -53,8 +53,8 @@
     <ClCompile Include="Network\URL.cpp">
       <Filter>Network</Filter>
     </ClCompile>
-    <ClCompile Include="SimpleLog.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\include\SimpleLog\SimpleLog.cpp">
+      <Filter>Network</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
