@@ -9,22 +9,10 @@
 
 namespace Network
 {
-
-
-	Http* Http::instance = NULL;
-	Http* Http::GetInstance(){
-		if (instance == NULL)
-		{
-			Http::instance = new Http();
-		}
+	const Http &  Http::GetInstance(){
+			static Http instance;
 		return instance;
 	}
-
-	Http::~Http()
-	{
-		;
-	}
-
 
 	/*HTTP Get Task. You Used HTTP::Get Method a time Which created a GetTask, System will push your Task into GetTaskQueue*/
 	class GetTask {
@@ -251,7 +239,7 @@ namespace Network
 	}
 
 
-	void Http::Get(const std::string &url, std::shared_ptr<HttpAction> action)
+	void Http::Get(const std::string &url, std::shared_ptr<HttpAction> action)const
 	{
 		GetTask task(url, action);
 		g_getTaskQueue.Push(task);

@@ -84,27 +84,22 @@ namespace Network
 	class HttpAction{
 	public:
 		HttpAction(){}
-		virtual void Do(std::shared_ptr<Network::Response> response){
-		}
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 1; }
-
+		virtual void Do(std::shared_ptr<Network::Response> response) = 0;
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) = 0;
 		~HttpAction(){}
-
 	};
 
 
 	class Http
 	{
 	public:
-		static Http* GetInstance();
-	public:
-		void Get(const std::string &url, std::shared_ptr<HttpAction> httpAction);
-		~Http();
+		static const Http & GetInstance();
+		void Get(const std::string &url, std::shared_ptr<HttpAction> httpAction)const;
+		~Http() {}
 		Http(const Http &http)=delete;
 		Http& operator=(const Http&)=delete;
 	private:
 		Http(){};
-		static Http* instance;
 	};
 
 }
