@@ -98,6 +98,16 @@ namespace Network
 		return realsize;
 	}
 
+	static int xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+	{
+		double curtime = 0;
+		GetTask *task = (GetTask * )p;
+		curl_easy_getinfo(task->GetResponse().GetCURL(), CURLINFO_TOTAL_TIME, &curtime);
+		return task->GetHttpAction()->Progress(curtime, (double)dltotal, (double)dlnow, 0, 0);
+	}
+
+	static int older_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
+	{return xferinfo(p, (curl_off_t)dltotal, (curl_off_t)dlnow, (curl_off_t)ultotal, (curl_off_t)ulnow);}
 
 #ifdef _DEBUG
 	/*Test Whether All Request Will be Excuted*/
@@ -107,14 +117,26 @@ namespace Network
 	static void init(CURLM *cm)
 	{
 		CURL *eh = curl_easy_init();
-
 		GetTask& unhandledTask = g_getTaskQueue.FrontUnhandledTask();
+		unhandledTask.GetResponse().SetCURL(eh);
 		Network::Memory &l_memory = unhandledTask.GetResponse().GetMemory();
-		//设置easy handle option
+		//set easy handle option
 		curl_easy_setopt(eh, CURLOPT_PRIVATE, &unhandledTask);
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
 		curl_easy_setopt(eh, CURLOPT_WRITEDATA, (void *)&l_memory);
 		curl_easy_setopt(eh, CURLOPT_VERBOSE, 0L);
+
+		curl_easy_setopt(eh, CURLOPT_NOPROGRESS, 0);
+		curl_easy_setopt(eh, CURLOPT_PROGRESSFUNCTION, older_progress);
+		/* pass the struct pointer into the progress function */
+		curl_easy_setopt(eh, CURLOPT_PROGRESSDATA, &unhandledTask);
+
+#if LIBCURL_VERSION_NUM >= 0x072000
+		curl_easy_setopt(eh, CURLOPT_XFERINFOFUNCTION, xferinfo);
+		/* pass the struct pointer into the xferinfo function, note that this is
+		an alias to CURLOPT_PROGRESSDATA */
+		curl_easy_setopt(eh, CURLOPT_XFERINFODATA, &unhandledTask);
+#endif
 #ifdef _DEBUG
 		_input_requests.push_back(unhandledTask.GetRequest().GetUrl());
 #endif // _DEBUG
@@ -249,5 +271,4 @@ namespace Network
 			networker.detach();
 		}
 	}
-
 }

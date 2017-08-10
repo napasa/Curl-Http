@@ -58,8 +58,8 @@ namespace Network
 	/*HTTP Response*/
 	class Response{
 	public:
-		Response():m_code(CURLE_OK),m_memory(){}
-		Response(const Response &response):m_code(response.m_code), m_memory(response.m_memory) {
+		Response():m_code(CURLE_OK),m_curl(nullptr),m_memory(){}
+		Response(const Response &response):m_code(response.m_code), m_curl(response.m_curl), m_memory(response.m_memory) {
 		}
 		~Response(){}
 		void SetResult(CURLcode code){
@@ -75,9 +75,16 @@ namespace Network
 		Memory &GetMemory(){
 			return m_memory;
 		}
+		void SetCURL(CURL *curl) {
+			m_curl = curl;
+		}
+		CURL *GetCURL()const {
+			return m_curl;
+		}
 	private:
 		Memory m_memory;
 		CURLcode m_code;
+		CURL *m_curl;
 	};
 
 	/*HTTP Action For Response From Server, overload Do to perform action to response*/
@@ -88,7 +95,6 @@ namespace Network
 		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) = 0;
 		~HttpAction(){}
 	};
-
 
 	class Http
 	{

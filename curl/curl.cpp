@@ -20,22 +20,18 @@ public:
 #ifdef _DEBUG
 			sprintf(l_result, "R: %d - %s \n",
 				response->GetResult(), curl_easy_strerror(response->GetResult()));
-			SL_LOG(l_result);
+			printf(l_result);
 #endif // _DEBUG
 		}
 		else
 		{
 #ifdef _DEBUG
-			static int i;
-			std::string htmlname = std::to_string(i++) + ".html";
-			FILE * pFile = fopen(htmlname.c_str(), "wb");
-			fwrite(response->GetMemory().m_memory, sizeof(char), response->GetMemory().m_size, pFile);
-			fclose(pFile);
+			printf(response->GetMemory().m_memory);
 #endif // _DEBUG
 		}
 	}
 	virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow)override {
-		return 1;
+		return 0;
 	}
 	~Action(){}
 };
@@ -44,7 +40,7 @@ int main(int argc, char *argv[])
 {
 	curl_global_init(CURL_GLOBAL_ALL);
 	{
-		Network::Http::GetInstance().Get("www.baidu.com",  std::make_shared<Action>());
+		Network::Http::GetInstance().Get("59.110.137.15:3389/alipay/createqrpay",  std::make_shared<Action>());
 	}
 	
 	std::string url;
