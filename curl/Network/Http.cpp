@@ -5,7 +5,7 @@
 #include <mutex>
 #include <chrono>
 #include "Http.h"
-#include <SimpleLog/SimpleLog.h>
+//#include <SimpleLog/SimpleLog.h>
 
 namespace Network
 {
