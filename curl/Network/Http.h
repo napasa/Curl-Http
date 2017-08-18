@@ -101,6 +101,8 @@ namespace Network
 	public:
 		static const Http & GetInstance();
 		void Get(const std::string &url, std::shared_ptr<HttpAction> httpAction)const;
+		void StopExcutor()const;
+
 		~Http() {}
 		Http(const Http &http)=delete;
 		Http& operator=(const Http&)=delete;

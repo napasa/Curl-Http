@@ -17,9 +17,8 @@ namespace Network
 	/*HTTP Get Task. You Used HTTP::Get Method a time Which created a GetTask, System will push your Task into GetTaskQueue*/
 	class GetTask {
 	public:
-		GetTask(const std::string &url, std::shared_ptr<HttpAction> action) :m_request(url), m_response(), m_httpAction(action) {
-
-		}
+		GetTask() : m_request("error"){};
+		GetTask(const std::string &url, std::shared_ptr<HttpAction> action) :m_request(url), m_response(), m_httpAction(action) {}
 		GetTask(const GetTask &gettask) :m_request(gettask.m_request), m_response(gettask.m_response), m_httpAction(gettask.m_httpAction) {
 		}
 		const Request &GetRequest()const {
@@ -53,6 +52,8 @@ namespace Network
 				if (httpGetTask.GetRequest().isUnhandled())
 					return httpGetTask;
 			}
+			static GetTask empty_task;
+			return empty_task;
 		}
 		bool HasUnhandledTask() {
 			for (GetTask &httpGetTask : m_getTaskQueue)
@@ -147,11 +148,12 @@ namespace Network
 		curl_multi_add_handle(cm, eh);
 	}
 
+	std::atomic_bool m_stop{ false };
 	void Excutor()
 	{
 		m_living.store(true);
 
-		CURLM *cm;
+		CURLM *cm=nullptr;
 		CURLMsg *msg;
 		long L;
 		unsigned int C = 0;
@@ -167,6 +169,11 @@ namespace Network
 
 		while (true)
 		{
+			if (m_stop.load())
+			{
+				break;
+			}
+
 			//Once Queue is empty, Pending it
 			while (!g_getTaskQueue.HasUnhandledTask())
 			{
@@ -268,7 +275,13 @@ namespace Network
 		if (!m_living.load())
 		{
 			std::thread networker(Excutor);
-			networker.detach();
+			networker.join();
 		}
 	}
+
+	void Http::StopExcutor()const
+	{
+		m_stop.store(true);
+	}
+
 }
