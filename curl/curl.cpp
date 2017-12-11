@@ -14,20 +14,20 @@
 class Action : public Network::HttpAction{
 public:
 	Action(){}
-	virtual void Do(std::shared_ptr<Network::Response> response)override{
+	virtual void Do(const Network::Response  &response)override{
 		char l_result[MAX_PATH];
-		if (response->GetResult() != CURLE_OK)
+		if (response.GetResult() != CURLE_OK)
 		{
 #ifdef _DEBUG
-			sprintf(l_result, "R: %d - %s \n",
-				response->GetResult(), curl_easy_strerror(response->GetResult()));
-			printf(l_result);
+			//sprintf(l_result, "R: %d - %s \n",
+			//	response.GetResult(), curl_easy_strerror(response.GetResult()));
+			//printf(l_result);
 #endif // _DEBUG
 		}
 		else
 		{
 #ifdef _DEBUG
-			printf(response->GetMemory().m_memory);
+			//printf(response.GetMemory().m_memory);
 #endif // _DEBUG
 		}
 	}
@@ -43,20 +43,9 @@ int main(int argc, char *argv[])
 	curl_global_init(CURL_GLOBAL_ALL);
 
 	{
-		Network::Http::GetInstance().Get("59.110.137.15:3389/alipay/createqrpay",  std::make_shared<Action>());
+		Network::Http::GetInstance().Get("127.0.0.1/alipay/createqrpay",  new Action);
+		Network::Http::GetInstance().Get("127.0.0.1/alipay/createqrpay", new Action);
 	}
-
-	
-	std::string url;
-	std::cout << "Input Request:  ";
-	while (std::cin>> url)
-	{
-		std::cout << "Receive Request: ";
-
-		Network::Http::GetInstance().Get(url, std::make_shared<Action>());
-
-		std::cout << url << std::endl;
-		std::cout << "Input Request:  ";
-	}
+	system("pause");
 	return 0;
 }
