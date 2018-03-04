@@ -30,9 +30,6 @@
     <ClInclude Include="Network\stdafx.h">
       <Filter>Http</Filter>
     </ClInclude>
-    <ClInclude Include="..\include\SimpleLog\SimpleLog.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Http\Router.h">
       <Filter>Http</Filter>
     </ClInclude>
