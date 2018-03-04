@@ -5,8 +5,7 @@
 #include <iostream>
 #include <thread>
 #include <ctime>
-#include <SimpleLog/SimpleLog.h>
-#include "Network/Router.h"
+#include "Http/Router.h"
 
 #define STOP_DOWNLOAD_AFTER_THIS_MANY_BYTES         6000
 #define MINIMAL_PROGRESS_FUNCTIONALITY_INTERVAL     3
