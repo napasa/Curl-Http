@@ -143,17 +143,15 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\SimpleLog\SimpleLog.h" />
-    <ClInclude Include="Network\Http.h" />
+    <ClInclude Include="Network\Router.h" />
     <ClInclude Include="Network\stdafx.h" />
-    <ClInclude Include="Network\URL.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\include\SimpleLog\SimpleLog.cpp" />
     <ClCompile Include="curl.cpp" />
-    <ClCompile Include="Network\Http.cpp" />
-    <ClCompile Include="Network\URL.cpp" />
+    <ClCompile Include="Network\Router.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

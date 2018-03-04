@@ -3,7 +3,7 @@
 #include <map>
 #include <vector>
 
-namespace Network
+namespace Http
 {
 
 	class URL

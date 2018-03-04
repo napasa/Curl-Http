@@ -27,17 +27,14 @@
     <ClInclude Include="targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Network\Http.h">
-      <Filter>Network</Filter>
-    </ClInclude>
     <ClInclude Include="Network\stdafx.h">
-      <Filter>Network</Filter>
-    </ClInclude>
-    <ClInclude Include="Network\URL.h">
       <Filter>Network</Filter>
     </ClInclude>
     <ClInclude Include="..\include\SimpleLog\SimpleLog.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Network\Router.h">
+      <Filter>Network</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -47,13 +44,10 @@
     <ClCompile Include="curl.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Network\Http.cpp">
-      <Filter>Network</Filter>
-    </ClCompile>
-    <ClCompile Include="Network\URL.cpp">
-      <Filter>Network</Filter>
-    </ClCompile>
     <ClCompile Include="..\include\SimpleLog\SimpleLog.cpp">
+      <Filter>Network</Filter>
+    </ClCompile>
+    <ClCompile Include="Network\Router.cpp">
       <Filter>Network</Filter>
     </ClCompile>
   </ItemGroup>

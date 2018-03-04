@@ -4,7 +4,7 @@
 #include <array>
 #include "URL.h"
 
-namespace Network
+namespace Http
 {
 	URL::URL(const std::string &host, const std::string &path, const AttribMap &queryString) :_scheme("http"), _host(host), _path(path), _queryString(queryString)
 	{
