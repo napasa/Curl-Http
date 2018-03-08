@@ -102,7 +102,7 @@ namespace Http
 	public:
 		Action() {}
 		virtual void Do(const Http::Task&task) = 0;
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow) { return 0; }
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow, const Http::Task&task)=0; //{ return 0; }
 		~Action() {}
 	};
 

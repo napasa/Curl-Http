@@ -6,14 +6,11 @@
 #include <memory>
 #include <list>
 #include <algorithm>
-#include <mutex>
 #include <condition_variable>
 #include "Router.h"
 
 namespace Http
 {
-	std::condition_variable cv;
-	std::mutex cv_m;
 
 	Memory::Memory()
 	{
@@ -134,8 +131,6 @@ namespace Http
 		}
 
 		void Push(Task &&task) {
-			std::lock_guard<std::mutex> lk(cv_m);
-			cv.notify_one();
 			taskQueue.push_back(std::move(task));
 		}
 		void Pop(long long mark) {
@@ -170,7 +165,7 @@ namespace Http
 		double curtime = 0;
 		Task *task = (Task *)p;
 		curl_easy_getinfo(task->Curl(), CURLINFO_TOTAL_TIME, &curtime);
-		return task->Action()->Progress(curtime, (double)dltotal, (double)dlnow, 0, 0);
+		return task->Action()->Progress(curtime, (double)dltotal, (double)dlnow, 0, 0, *task);
 	}
 
 	static int older_progress(void *p, double dltotal, double dlnow, double ultotal, double ulnow)
@@ -221,8 +216,11 @@ namespace Http
 
 		while (true)
 		{
-			std::unique_lock<std::mutex> lk(cv_m);
-			cv.wait(lk, [] {return g_taskQueue.HasUnhandledTask(); });
+			while (!g_taskQueue.HasUnhandledTask())
+			{
+				Sleep(100);
+			}
+
 
 			M = Q = U = -1;
 
@@ -285,7 +283,6 @@ namespace Http
 					U++; /* just to prevent it from remaining at 0 if there are more URLs to get */
 				}
 			}
-			lk.unlock();
 		}
 	}
 
