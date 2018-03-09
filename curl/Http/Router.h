@@ -26,13 +26,48 @@ namespace Http
 		size_t size;
 	};
 
+
+	//name,value,type
+	class UploadedData
+	{
+	public:
+		enum FIELD{
+			STRING,
+			FILE
+		};
+		UploadedData(){}
+		UploadedData(FIELD dataType, const std::string &key, const std::string &value) :field(dataType), key(key), value(value){}
+		UploadedData(const UploadedData &postedData) :field(postedData.field), key(postedData.key), value(postedData.value){}
+		UploadedData(UploadedData &&postedData) :field(postedData.field), key(std::move(postedData.key)), value(std::move(postedData.value)){}
+		UploadedData &operator=(const UploadedData &) = delete;
+		bool operator==(const UploadedData &postData)const{
+			return field == postData.field && key == postData.key&&value == postData.value;
+		}
+		FIELD Field() const { return field; }
+		void Field(FIELD val) { field = val; }
+		std::string &Key(){ return key; }
+		void Key(const std::string &val) { key = val; }
+		std::string &Value(){ return value; }
+		void Value(const std::string &val) { value = val; }
+	private:
+		FIELD field;
+		std::string key;
+		std::string value;
+	};
+
 	/*HTTP request*/
-	class TaskQueue;
+	//class TaskQueue;
 	class Request
 	{
 	public:
+		enum TYPE{
+			GET,
+			POST
+		};
+	public:
 		Request() = delete;
 		Request(const std::string &url, void * userData = nullptr);
+		Request(const std::string &url, const std::vector<UploadedData> &uploadeddatas, void *userData = nullptr);
 		Request(const Request &request);
 		Request(Request &&request);
 		Request & operator=(const Request &) = delete;
@@ -46,12 +81,18 @@ namespace Http
 		bool Unhandled() const { return unhandled; }
 		void * UserData() const { return userData; }
 		void UserData(void * val) { userData = val; }
+		std::vector<UploadedData> &Uploadeddatas(){ return uploadeddatas; }
+		Http::Request::TYPE Type() const { return type; }
+		void Type(Http::Request::TYPE val) { type = val; }
 	protected:
 		std::string url;
 		bool unhandled;
 		void *userData;
-
+		std::vector<UploadedData> uploadeddatas;
+		TYPE type;
 	};
+
+
 
 	/*HTTP response*/
 	class Response : public Memory {
@@ -83,6 +124,8 @@ namespace Http
 		Task(Task &&task);
 		Task(const std::string &url, Action *action, void * userdata = nullptr)
 			:Request(url, userdata), Response(), action(action), mark(Task::markCouter++) {}
+		Task(const std::string &url, const std::vector<UploadedData> &uploadData, Action *action, void *userData = nullptr)
+			:Request(url, uploadData, userData),action(action), mark(Task::markCouter++){}
 		bool operator==(const Task &task)const;
 		~Task() {  }
 		//Setter and getter
@@ -111,6 +154,7 @@ namespace Http
 	public:
 		static  Router & GetInstance();
 		void Get(const std::string &url, Action *httpAction, void * userData = nullptr);
+		void Post(const std::string &url, const std::vector<UploadedData> &uploadedDatas, Action *httpAction, void *userData = nullptr);
 		~Router();
 		Router(const Router &http) = delete;
 		Router& operator=(const Router&) = delete;

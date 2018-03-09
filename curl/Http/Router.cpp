@@ -1,6 +1,4 @@
-﻿#ifdef _WIN32
-#define  _CRT_SECURE_NO_WARNINGS
-#endif
+﻿
 #include "stdafx.h"
 #include <thread>
 #include <memory>
@@ -43,22 +41,31 @@ namespace Http
 		MemoryAddr(0);
 	}
 
-	Request::Request(const std::string &url, void * userData) :url(url), userData(userData), unhandled(true)
+	Request::Request(const std::string &url, void * userData) :url(url), userData(userData), unhandled(true), uploadeddatas(), type(TYPE::GET)
 	{}
+
+	Request::Request(const std::string &url, const std::vector<UploadedData> &uploadeddatas, void *userData /*= nullptr*/)
+		: url(url), uploadeddatas(uploadeddatas), userData(userData), type(TYPE::POST)
+	{
+
+	}
 
 	Request::Request(const Request &request) : url(request.Url()), userData(request.UserData()),
-		unhandled(request.Unhandled())
+		unhandled(request.Unhandled()), uploadeddatas(request.uploadeddatas)
 	{}
 
+
 	Request::Request(Request &&request)
-		: url(std::move(request.url)), unhandled(request.unhandled), userData(request.userData)
+		: url(std::move(request.url)), unhandled(request.unhandled), userData(request.userData), uploadeddatas(std::move(request.uploadeddatas))
 	{
 		request.UserData(nullptr);
 	}
 
+
+
 	bool Request::operator==(const Request&request) const
 	{
-		return url == request.url&&unhandled == request.unhandled&&userData == request.userData;
+		return url == request.url&&unhandled == request.unhandled&&userData == request.userData && uploadeddatas == request.uploadeddatas;
 	}
 
 	Request::~Request()
@@ -179,6 +186,38 @@ namespace Http
 		CURL *eh = curl_easy_init();
 		Task& unhandledTask = *g_taskQueue.FrontUnhandledTask();
 		unhandledTask.Curl(eh);
+		//check request type
+		if (unhandledTask.Type() == Request::TYPE::POST)
+		{
+			struct curl_httppost *formpost = NULL;
+			struct curl_httppost *lastptr = NULL;
+
+			struct curl_slist *headerlist = NULL;
+			static const char buf[] = "Expect:";
+
+
+
+			const std::vector<UploadedData> &uploadedDatas = unhandledTask.Uploadeddatas();
+			for (auto data : uploadedDatas)
+			{
+				CURLformoption opt;
+				if (data.Field() == UploadedData::FIELD::FILE)
+				{
+					opt = CURLformoption::CURLFORM_COPYNAME;
+				}
+				else
+				{
+					opt = CURLformoption::CURLFORM_COPYCONTENTS;
+				}
+				curl_formadd(&formpost, &lastptr,
+					CURLFORM_COPYNAME, data.Key().c_str(),
+					opt, data.Value().c_str(),
+					CURLFORM_END);
+			}
+			headerlist = curl_slist_append(headerlist, buf);
+			curl_easy_setopt(eh, CURLOPT_HTTPHEADER, headerlist);
+			curl_easy_setopt(eh, CURLOPT_HTTPPOST, formpost);
+		}
 		//set easy handle option
 		curl_easy_setopt(eh, CURLOPT_PRIVATE, (void *)&unhandledTask);
 		curl_easy_setopt(eh, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
@@ -299,6 +338,15 @@ namespace Http
 			std::thread excutor(Excutor);
 			excutor.detach();
 		}
+	}
+
+	void Router::Post(const std::string &url, const std::vector<UploadedData> & uploadedDatas, Action *httpAction, void *userData /*= nullptr*/)
+	{
+		if (std::find(std::begin(actionList), std::end(actionList), httpAction) != std::end(actionList))
+		{
+			actionList.push_back(httpAction);
+		}
+		g_taskQueue.Push(Task(url, uploadedDatas, httpAction, userData));
 	}
 
 	Router::~Router()
