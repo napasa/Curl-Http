@@ -11,7 +11,7 @@ namespace Http
 	public:
 		Memory();
 		Memory(const Memory &memory);
-		Memory(Memory &&memory)noexcept;
+		Memory(Memory &&memory);
 		Memory & operator=(const Memory &memory) = delete;
 		bool operator==(const Memory&)const;
 		//Setter and getter

@@ -26,7 +26,7 @@ namespace Http
 		memcpy(memoryAddr, memory.MemoryAddr(), memory.Size());
 	}
 
-	Memory::Memory(Memory &&memory)noexcept
+	Memory::Memory(Memory &&memory)
 		:memoryAddr(memory.memoryAddr), size(memory.size)
 	{
 		memory.MemoryAddr(nullptr);
