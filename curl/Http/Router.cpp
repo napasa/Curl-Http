@@ -50,13 +50,15 @@ namespace Http
 
 	}
 
-	Request::Request(const Request &request) : url(request.Url()), userData(request.UserData()),
-		unhandled(request.Unhandled()), uploadeddatas(request.uploadeddatas)
+	Request::Request(const Request &request) 
+		: url(request.Url()), userData(request.UserData()),
+		unhandled(request.Unhandled()), uploadeddatas(request.uploadeddatas), type(request.type)
 	{}
 
 
 	Request::Request(Request &&request)
-		: url(std::move(request.url)), unhandled(request.unhandled), userData(request.userData), uploadeddatas(std::move(request.uploadeddatas))
+		: url(std::move(request.url)), userData(request.userData), 
+		unhandled(request.unhandled), uploadeddatas(std::move(request.uploadeddatas)), type(request.type)
 	{
 		request.UserData(nullptr);
 	}
@@ -65,7 +67,7 @@ namespace Http
 
 	bool Request::operator==(const Request&request) const
 	{
-		return url == request.url&&unhandled == request.unhandled&&userData == request.userData && uploadeddatas == request.uploadeddatas;
+		return url == request.url&&unhandled == request.unhandled&&userData == request.userData && uploadeddatas == request.uploadeddatas&&type==request.Type();
 	}
 
 	Request::~Request()
@@ -187,6 +189,7 @@ namespace Http
 		Task& unhandledTask = *g_taskQueue.FrontUnhandledTask();
 		unhandledTask.Curl(eh);
 		//check request type
+		Request::TYPE type = unhandledTask.Type();
 		if (unhandledTask.Type() == Request::TYPE::POST)
 		{
 			struct curl_httppost *formpost = NULL;
@@ -195,15 +198,13 @@ namespace Http
 			struct curl_slist *headerlist = NULL;
 			static const char buf[] = "Expect:";
 
-
-
 			const std::vector<UploadedData> &uploadedDatas = unhandledTask.Uploadeddatas();
 			for (auto data : uploadedDatas)
 			{
 				CURLformoption opt;
 				if (data.Field() == UploadedData::FIELD::FILE)
 				{
-					opt = CURLformoption::CURLFORM_COPYNAME;
+					opt = CURLformoption::CURLFORM_FILE;
 				}
 				else
 				{
@@ -331,13 +332,7 @@ namespace Http
 		{
 			actionList.push_back(httpAction);
 		}
-		g_taskQueue.Push(Task(url, httpAction, userData));
-		if (g_createdExcutor == true)
-		{
-			g_createdExcutor = false;
-			std::thread excutor(Excutor);
-			excutor.detach();
-		}
+		Run(Task(url, httpAction, userData));
 	}
 
 	void Router::Post(const std::string &url, const std::vector<UploadedData> & uploadedDatas, Action *httpAction, void *userData /*= nullptr*/)
@@ -346,7 +341,19 @@ namespace Http
 		{
 			actionList.push_back(httpAction);
 		}
-		g_taskQueue.Push(Task(url, uploadedDatas, httpAction, userData));
+		//g_taskQueue.Push(Task(url, uploadedDatas, httpAction, userData));
+		Run(Task(url, uploadedDatas, httpAction, userData));
+	}
+
+	void Router::Run(Task &&task)
+	{
+		g_taskQueue.Push(std::move(task));
+		if (g_createdExcutor == true)
+		{
+			g_createdExcutor = false;
+			std::thread excutor(Excutor);
+			excutor.detach();
+		}
 	}
 
 	Router::~Router()

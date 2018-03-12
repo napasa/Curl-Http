@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include <vector>
 #include <curl/curl.h>
+#include <cassert>
 
 #define ROUTER Http::Router::GetInstance()
 namespace Http
@@ -39,15 +40,18 @@ namespace Http
 		UploadedData(FIELD dataType, const std::string &key, const std::string &value) :field(dataType), key(key), value(value){}
 		UploadedData(const UploadedData &postedData) :field(postedData.field), key(postedData.key), value(postedData.value){}
 		UploadedData(UploadedData &&postedData) :field(postedData.field), key(std::move(postedData.key)), value(std::move(postedData.value)){}
-		UploadedData &operator=(const UploadedData &) = delete;
+		UploadedData &operator=(const UploadedData &uploadData){
+			field = uploadData.Field(); key = uploadData.Key(), value = uploadData.Value();
+			return *this;
+		}
 		bool operator==(const UploadedData &postData)const{
 			return field == postData.field && key == postData.key&&value == postData.value;
 		}
 		FIELD Field() const { return field; }
 		void Field(FIELD val) { field = val; }
-		std::string &Key(){ return key; }
+		const std::string &Key()const{ return key; }
 		void Key(const std::string &val) { key = val; }
-		std::string &Value(){ return value; }
+		const std::string &Value()const { return value; }
 		void Value(const std::string &val) { value = val; }
 	private:
 		FIELD field;
@@ -60,9 +64,9 @@ namespace Http
 	class Request
 	{
 	public:
-		enum TYPE{
-			GET,
-			POST
+		enum TYPE :int{
+			GET=0,
+			POST=1
 		};
 	public:
 		Request() = delete;
@@ -82,8 +86,8 @@ namespace Http
 		void * UserData() const { return userData; }
 		void UserData(void * val) { userData = val; }
 		std::vector<UploadedData> &Uploadeddatas(){ return uploadeddatas; }
-		Http::Request::TYPE Type() const { return type; }
-		void Type(Http::Request::TYPE val) { type = val; }
+		Http::Request::TYPE Type() const { assert(type == GET || type == POST); return type; }
+		void Type(Http::Request::TYPE val) { type = val; assert(type == GET || type == POST); }
 	protected:
 		std::string url;
 		bool unhandled;
@@ -145,7 +149,7 @@ namespace Http
 	public:
 		Action() {}
 		virtual void Do(const Http::Task&task) = 0;
-		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow, const Http::Task&task)=0; //{ return 0; }
+		virtual int Progress(double totaltime, double dltotal, double dlnow, double ultotal, double ulnow, const Http::Task&task)=0;
 		~Action() {}
 	};
 
@@ -155,6 +159,7 @@ namespace Http
 		static  Router & GetInstance();
 		void Get(const std::string &url, Action *httpAction, void * userData = nullptr);
 		void Post(const std::string &url, const std::vector<UploadedData> &uploadedDatas, Action *httpAction, void *userData = nullptr);
+		void Run(Task &&task);
 		~Router();
 		Router(const Router &http) = delete;
 		Router& operator=(const Router&) = delete;
